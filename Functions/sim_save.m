@@ -4,7 +4,7 @@ function sim_save(save_data,conn,table_name,current_frames,parameters,paramHash)
 switch save_data.priority
     case "mysql"
         if save_data.save_mysql
-            T = mysql_load(conn_local,table_name,"*");
+            T = mysql_load(conn,table_name,"*");
         elseif save_data.save_excel
             try
                 T = readtable(save_data.excel_path, 'TextType', 'string');
@@ -20,7 +20,7 @@ switch save_data.priority
                 T = table;
             end
         elseif save_data.save_mysql
-            T = mysql_load(conn_local,table_name,"*");
+            T = mysql_load(conn,table_name,"*");
         end
 end
 try

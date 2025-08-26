@@ -7,11 +7,11 @@
 clc; clear;
 
 % Settings
-use_parellelization = true;
+use_parellelization = false;
 save_data.priority = "mysql"; % local or mysql
 save_data.save_excel = false;
 save_data.save_mysql = true;
-create_database_tables = false;
+create_database_tables = true;
 dbname     = 'comm_database';
 table_name = "results_TWC";
 

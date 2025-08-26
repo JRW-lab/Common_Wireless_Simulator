@@ -21,7 +21,7 @@ end
 res = 10;
 Es = 1;
 Eb = Es / log2(M_ary);
-N_iters = 10;
+N_iters = 3;
 syms_per_f = M*N*U;
 N0 = Eb / (10^(EbN0 / 10)) * ((N+2)/N);
 

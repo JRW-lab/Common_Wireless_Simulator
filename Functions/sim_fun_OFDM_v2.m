@@ -53,7 +53,9 @@ end
 bit_errors = zeros(new_frames,1);
 sym_errors = zeros(new_frames,1);
 frm_errors = zeros(new_frames,1);
+iters_vec = zeros(new_frames,1);
 t_RXiter_vec = zeros(new_frames,1);
+t_RXfull_vec = zeros(new_frames,1);
 
 % Initialize vectors
 for frame = 1:new_frames
@@ -90,16 +92,24 @@ for frame = 1:new_frames
 
     % Detection
     switch receiver_name
+        case "CMC-MMSE"
+            y_F = G_F * s + z_F;
+            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_CMC_MMSE_AWGN(y_F,G_F,1,N,0,0,1,N0,S,3);
+            RX_data = demodulator(x_hat,S);
+        case "MMSE"
+            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(y_F,G_F,1,N0);
+            RX_data = demodulator(x_hat,S);
         case "DD-BDFE"
-            s_hat = zeros(N,1);
+            iters_vec(frame) = 1;
+            x_hat = zeros(N,1);
             RX_data = zeros(N,1);
             if FdT0 ~= 0 % Non-quasi-static fading
                 % Create Block variables
                 H_bar = D * G_F;
                 w_bar = D * z_F;
                 r_bar = H_bar * s + w_bar;
-                s_hat = bdfe(r_bar.',H_bar,N0,S);
-                RX_data = demodulator(s_hat,S);
+                x_hat = bdfe(r_bar.',H_bar,N0,S);
+                RX_data = demodulator(x_hat,S);
 
             else % Quasi-static fading
                 % Set up g_T for equalizer
@@ -130,9 +140,10 @@ for frame = 1:new_frames
                     % Decide most likely symbol
                     arg_result = abs(phi_k - q_k*S).^2;
                     [~,RX_data(k+1)] = min(arg_result);
-                    s_hat(k+1) = S(RX_data(k+1));
+                    x_hat(k+1) = S(RX_data(k+1));
                 end
             end
+            t_RXfull_vec(frame) = toc(tStartRX);
         otherwise
             error("Unsupported receiver for the simulated system!")
     end
@@ -144,10 +155,7 @@ for frame = 1:new_frames
     if sum(sym_errors(frame)) > 0
         frm_errors(frame) = 1;
     end
-
-    % Stop runtime
-    t_RXiter_vec(frame) = toc(tStartRX);
-
+    
 end
 
 % Get parameters for throughput
@@ -159,9 +167,9 @@ metrics.BER = sum(bit_errors,"all") / (new_frames*syms_per_f*log2(M_ary));
 metrics.SER = sum(sym_errors,"all") / (new_frames*syms_per_f);
 metrics.FER = sum(frm_errors,"all") / (new_frames);
 metrics.Thr = (log2(M_ary) * syms_per_f * (1 - metrics.FER)) / (frame_duration * bandwidth_hz);
-metrics.RX_iters = 1;
+metrics.RX_iters = mean(iters_vec);
 metrics.t_RXiter = mean(t_RXiter_vec);
-metrics.t_RXfull = metrics.t_RXiter;
+metrics.t_RXfull = mean(t_RXfull_vec);
 
 end
 

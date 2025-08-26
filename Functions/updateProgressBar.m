@@ -15,6 +15,11 @@ function updateProgressBar(d)
     if ~isfield(d, 'Q')
         d.Q = NaN;
     end
+    if d.CP
+        cp_string = "CP-"
+    else
+        cp_string = "CP-free "
+    end
 
     % Create variables
     config_count = (d.primvar_sel - 1) * d.conf_len + d.sel;
@@ -31,9 +36,9 @@ function updateProgressBar(d)
     % Clear screen and print formatted simulation status
     clc;
     fprintf("+++ RUNNING PROFILE %d +++\n\n", evalin('base','profile_sel'));
-    fprintf("(%d/%d) Simulating %d of %d frames of %s system\n", ...
+    fprintf("(%d/%d) Simulating %d of %d frames of %s%s system\n", ...
         config_count, config_length, ...
-        d.current_frames, d.num_frames, d.system_name);
+        d.current_frames, d.num_frames, cp_string, d.system_name);
 
     fprintf("        Eb/N0 = %ddB, M = %d, N = %d, U = %d,\n", ...
         d.EbN0, d.M, d.N, d.U);

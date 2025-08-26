@@ -25,8 +25,8 @@ sys.v_vel = vel;
 sys.rolloff = alpha;
 
 % Equalizer settings
-N_iters = 8;
-ambig_res = 1001;
+N_iters = 3;
+ambig_res = 101;
 % rng('default');
 
 % Inputs from system object
@@ -182,7 +182,7 @@ for frame = 1:new_frames
         tap_f_range(tap_f_range > 1001) = 1001;
 
         % Create H Matrix
-        H = gen_H_direct(T,N,M,Lp,Ln,chn_g,chn_v,ambig_vals,tap_t_range,tap_f_range);
+        H = gen_H_direct(T,N,M,Lp,Ln,chn_g,chn_v,ambig_vals,tap_t_range,tap_f_range,t_offset);
     end
     H_tilde = gen_H_tilde(H,M,N,Lp,Ln,F_N);
 

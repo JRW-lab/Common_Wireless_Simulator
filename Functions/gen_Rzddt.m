@@ -30,11 +30,11 @@ end
 
 % Assign correct noise taps to covariance matrix
 R_ztf = zeros(N*M);
-fprintf("| Progress:")
-for i = 1:M-12
-    fprintf(" ");
-end
-fprintf("|\n");
+% fprintf("| Progress:")
+% for i = 1:M-12
+%     fprintf(" ");
+% end
+% fprintf("|\n");
 for m1 = 0:M-1
     for m2 = 0:M-1
         for n1 = 0:N-1
@@ -47,7 +47,7 @@ for m1 = 0:M-1
             end
         end
     end
-    fprintf("x")
+    % fprintf("x")
 end
 
 % Convert covariance matrix into needed domain
