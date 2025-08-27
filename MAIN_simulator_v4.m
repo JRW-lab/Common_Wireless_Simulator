@@ -1,13 +1,13 @@
 %% Start
 % This file tests the BER/SER/FER for a few wireless communications
-% systems (supported: OTFS, ODDM, TODDM), with settings specified in each
+% systems (supported: OFDM, OTFS, ODDM, TODDM), with settings specified in each
 % profile. Data is saved in a MySQL server so a password is required.
 %
 % Coded 6/9/2025, JRW
 clc; clear;
 
 % Settings
-use_parellelization = true;
+use_parellelization = 1;
 save_data.priority = "mysql"; % local or mysql
 save_data.save_excel = false;
 save_data.save_mysql = true;
@@ -23,169 +23,28 @@ save_data.excel_folder = 'Data';
 save_data.excel_name = table_name;
 save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".xlsx");
 
-% Profile names (for profile selector)
-profile_names = {
-    "System Comparison (ODDM/OTFS/OFDM)"
-    "Receiver Comparison (CMC-MMSE/MMSE)"
-    "Timing Offset Sweep (0:0.25:1 * T_s)"
-    };
-[profile_sel,num_frames] = profile_select(profile_names,true);
+% Load profiles and select
+[all_profiles,profile_names] = saved_profiles();
+[profile_sel,num_frames,delete_sel] = profile_select(profile_names,true);
 
-% Set number of frames per iteration
+% Set number of frames per iteration and render settings
 frames_per_iter = 10;
 if num_frames <= 0
-    % Settings
-    render_figure = true;
-    save_sel = true;
     skip_simulations = true;
 else
-    % Settings
     skip_simulations = false;
-    [render_figure,save_sel] = figure_settings();
+end
+render_figure = true;
+save_sel = true;
+
+% Extract data from profile
+p_sel = all_profiles{profile_sel};
+fields = fieldnames(p_sel);
+for i = 1:numel(fields)
+    eval([fields{i} ' = p_sel.(fields{i});']);
 end
 
-%% Configurations
-switch profile_sel
-    case 1
-        % PROFILE 1
-        vis_type = "figure";
-        data_type = "BER";
-        primary_var = "EbN0";
-        primary_vals = 3:3:18;
-        default_parameters = struct(...
-            'system_name', "ODDM",...
-            'CP', false,...
-            'receiver_name', "CMC-MMSE",...
-            'max_timing_offset', 0.0,...
-            'M_ary', 4, ...
-            'EbN0', 18, ...
-            'M', 64, ...
-            'N', 16, ...
-            'U', 1, ...
-            'T', 1 / 15000, ...
-            'Fc', 4e9, ...
-            'vel', 120, ...
-            'shape', "rrc", ...
-            'alpha', 0.4, ...
-            'Q', 8);
-        configs = {
-            struct('system_name','ODDM','CP',false)
-            struct('system_name','ODDM','CP',true)
-            struct('system_name','OTFS')
-            struct('system_name','OFDM')
-            };
-        legend_vec = {
-            "CP-Free ODDM (Proposed)"
-            "CP-ODDM"
-            "OTFS"
-            "OFDM"
-            };
-        line_styles = {
-            "-x"
-            "-+"
-            "-v"
-            "-square"
-            };
-        line_colors = {...
-            "#FF0000"
-            "#00FF00"
-            "#0000FF"
-            "#FF00FF"
-            };
-    case 2
-        % PROFILE 2
-        vis_type = "figure";
-        data_type = "BER";
-        primary_var = "EbN0";
-        primary_vals = 3:3:18;
-        default_parameters = struct(...
-            'system_name', "ODDM",...
-            'CP', false,...
-            'receiver_name', "CMC-MMSE",...
-            'max_timing_offset', 0.0,...
-            'M_ary', 4, ...
-            'EbN0', 18, ...
-            'M', 64, ...
-            'N', 16, ...
-            'U', 1, ...
-            'T', 1 / 15000, ...
-            'Fc', 4e9, ...
-            'vel', 120, ...
-            'shape', "rrc", ...
-            'alpha', 0.4, ...
-            'Q', 8);
-        configs = {
-            struct('receiver_name','CMC-MMSE')
-            struct('receiver_name','MMSE')
-            };
-        legend_vec = {
-            "CMC-MMSE"
-            "MMSE"
-            };
-        line_styles = {
-            "-x"
-            "-+"
-            };
-        line_colors = {...
-            "#FF0000"
-            "#0000FF"
-            };
-    case 3
-        % PROFILE 2
-        vis_type = "figure";
-        data_type = "BER";
-        primary_var = "max_timing_offset";
-        primary_vals = 0:0.25:1;
-        default_parameters = struct(...
-            'system_name', "ODDM",...
-            'CP', false,...
-            'receiver_name', "CMC-MMSE",...
-            'max_timing_offset', 0.0,...
-            'M_ary', 4, ...
-            'EbN0', 18, ...
-            'M', 64, ...
-            'N', 16, ...
-            'U', 1, ...
-            'T', 1 / 15000, ...
-            'Fc', 4e9, ...
-            'vel', 120, ...
-            'shape', "rrc", ...
-            'alpha', 0.4, ...
-            'Q', 8);
-        configs = {
-            struct('receiver_name','CMC-MMSE')
-            struct('receiver_name','MMSE')
-            };
-        legend_vec = {
-            "CMC-MMSE"
-            "MMSE"
-            };
-        line_styles = {
-            "-x"
-            "-+"
-            };
-        line_colors = {...
-            "#FF0000"
-            "#0000FF"
-            };
-end
-
-%% Simulation setup
-
-% Find function files, get parameter list, modify sim data as needed
-var_names = fieldnames(default_parameters);
-prvr_len = length(primary_vals);
-conf_len = length(configs);
-
-% Progress tracking setup
-num_iters = ceil(num_frames / frames_per_iter);
-dq = parallel.pool.DataQueue;
-completed_tasks = 0;
-total_tasks = prvr_len*conf_len*num_iters;
-
-% Callback to update progress
-afterEach(dq, @updateProgressBar);
-
+%% Database setup
 % Set up connection to MySQL server
 if save_data.save_mysql
     conn_local = mysql_login(dbname);
@@ -256,7 +115,9 @@ switch save_data.priority
         end
 end
 
-% Make parameters
+%% Make parameters for each sim point
+prvr_len = length(primary_vals);
+conf_len = length(configs);
 system_names = cell(prvr_len,conf_len);
 params_cell = cell(prvr_len,conf_len);
 hash_cell = cell(prvr_len,conf_len);
@@ -269,27 +130,17 @@ for primvar_sel = 1:prvr_len
     % Go through each settings profile
     for sel = 1:conf_len
 
-        % Increment count variable
-        iter_idx = (primvar_sel-1)*prvr_len + sel;
-
-        % set all other variables
-        var_vals = cell(length(var_names),1);
-        for var_sel = 1:length(var_names)
-            if isfield(configs{sel}, var_names{var_sel}) % Set secondary variables
-                var_vals{var_sel} = configs{sel}.(cell2mat(var_names(var_sel)));
-            elseif string(var_names{var_sel}) ~= primary_var % Set generic variables
-                var_vals{var_sel} = default_parameters.(cell2mat(var_names(var_sel)));
-            elseif string(var_names{var_sel}) == primary_var % Set primary variable variables
-                var_vals{var_sel} = primvar_val;
-            end
+        % Create parameters instance
+        parameters = default_parameters;
+        parameters.(primary_var) = primvar_val;
+        config_sel = configs{sel};
+        config_fields = fields(config_sel);
+        for i = 1:length(config_fields)
+            parameters.(config_fields{i}) = config_sel.(config_fields{i});
         end
 
-        % Make parameters
-        fields = fieldnames(default_parameters);
-        parameters = cell2struct(var_vals, fields);
-        system_names{primvar_sel,sel} = var_vals{1};
-
         % Remove unnecessary variables to get correct hash
+        system_names{primvar_sel,sel} = parameters.system_name;
         if system_names{primvar_sel,sel} == "ODDM"
             parameters = rmfield(parameters, 'U');
         elseif system_names{primvar_sel,sel} == "OTFS"
@@ -301,33 +152,62 @@ for primvar_sel = 1:prvr_len
             parameters = rmfield(parameters, 'alpha');
             parameters = rmfield(parameters, 'Q'); 
         end
+        if exist("parameters.shape",'var')
+            if parameters.shape ~= "rrc"
+                parameters = rmfield(parameters, 'alpha');
+            end
+        end
 
         % Add parameters to stack
         params_cell{primvar_sel,sel} = parameters;
-
-        % Load data from DB
         [~,paramHash] = jsonencode_sorted(parameters);
-        try
-            sim_result = T(string(T.param_hash) == paramHash, :);
-        catch
-            sim_result = [];
-        end
-
-        % Save parameter hash
         hash_cell{primvar_sel,sel} = paramHash;
 
-        % Set prior frames
-        if ~isempty(sim_result)
-            prior_frames(primvar_sel,sel) = sim_result.frames_simulated;
+        % Either delete the saved data and reset, or note previous progress
+        if delete_sel && ismember(sel,delete_configs)
+            % Delete data from database/table
+            switch save_data.priority
+                case "mysql"
+                    if save_data.save_mysql
+                        delete_command = sprintf("DELETE FROM %s WHERE param_hash = '%s';",table_name,paramHash);
+                        exec(conn_local, delete_command);
+                    elseif save_data.save_excel
+                        table_locs = 1 - (string(T.param_hash) == paramHash);
+                        T = T(logical(table_locs),:);
+                    end
+                case "local"
+                    if save_data.save_excel
+                        table_locs = 1 - (string(T.param_hash) == paramHash);
+                        T = T(logical(table_locs),:);
+                    elseif save_data.save_mysql
+                        delete_command = sprintf("DELETE FROM %s WHERE param_hash = '%s';",table_name,paramHash);
+                        exec(conn_local, delete_command);
+                    end
+            end
         else
-            prior_frames(primvar_sel,sel) = 0;
+            % Load data from DB
+            try
+                sim_result = T(string(T.param_hash) == paramHash, :);
+                prior_frames(primvar_sel,sel) = sim_result.frames_simulated;
+            catch
+                prior_frames(primvar_sel,sel) = 0;
+            end
         end
+
 
     end
 end
 
-%% Simulation loop
+% Overwrite old table (Excel only)
+if delete_sel && save_data.save_excel
+    writetable(T, save_data.excel_path);
+end
 
+%% Simulation loop
+% Start sim loop
+num_iters = ceil(num_frames / frames_per_iter);
+dq = parallel.pool.DataQueue;
+afterEach(dq, @updateProgressBar);
 if ~skip_simulations
 
     % Set up connection to MySQL server
@@ -426,7 +306,6 @@ if ~skip_simulations
 end
 
 %% Figure generation
-
 % Set up figure data
 figure_data.data_type = data_type;
 figure_data.primary_var = primary_var;

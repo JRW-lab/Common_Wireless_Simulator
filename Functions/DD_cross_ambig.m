@@ -70,11 +70,7 @@ if ambig_bias ~= 0
     filter_2 = gen_pulse(t_range,shape,Ts,Q,alpha);
 
     % Define integration function
-    if CP
-        norm_val = sqrt(sum(abs(filter_2).^2) * dt) * sqrt(N);
-    else
-        norm_val = sqrt(sum(abs(filter_2).^2) * dt) * sqrt(N+1);
-    end
+    norm_val = sqrt(sum(abs(filter_2).^2) * dt) * sqrt(N);
     integral_vec = conj(filter_1 / norm_val) .* (filter_2 / norm_val) .* exp(-1j.*2.*pi.*(t_range-t).*f);
     Aa = ambig_bias * sum(integral_vec.*dt,"all");
 

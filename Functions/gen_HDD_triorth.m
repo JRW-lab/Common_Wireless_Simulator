@@ -5,8 +5,8 @@ Ts = T / M;
 
 % Generate channel
 [Phi_i,tau_i,v_i] = channel_generation(Fc,vel);
-L1 = Q;
-L2 = Q + floor(max(tau_i) / Ts);
+L1 = Q + 1;
+L2 = Q + 1 + floor(max(tau_i) / Ts);
 
 % Set up indices for block placement in HDD
 u_vec = repmat((0:U-1).',M,1);

@@ -77,7 +77,7 @@ if ~exist(subsubfolder, 'dir')
     mkdir(subsubfolder);
 end
 
-% Change label depending on range parameter
+% Change x label depending on range parameter
 switch primary_var
     case "EbN0"
         xlabel_name = "E_b/N_0";
@@ -88,8 +88,30 @@ switch primary_var
         xlabel_name = "T (us)";
     case "frequency_limit"
         xlabel_name = "Cutoff Frequency (Hz)";
+    case "max_timing_offset"
+        xlabel_name = "|\tau_{e,max}| (in T_s)";
     otherwise
         xlabel_name = primary_var;
+end
+
+% Change y label depending on data type
+switch data_type
+    case "Thr"
+        ylim_vec = [0 ceil(max(results_mat,[],"all"))];
+        ylabel_str = "Throughput (bps/Hz)";
+        loc = "northwest";
+        y_type = "linear";
+    case "t_RXfull"
+        results_mat = results_mat * 10^3;
+        ylim_vec = [0 ceil(max(results_mat,[],"all"))];
+        ylabel_str = "t_{RX,avg} (ms)";
+        loc = "northwest";
+        y_type = "linear";
+    otherwise
+        ylim_vec = [1e-6 1e-1];
+        ylabel_str = data_type;
+        loc = "southwest";
+        y_type = "log";
 end
 
 % Display figure
@@ -102,15 +124,9 @@ for i = 1:size(results_mat,2)
         LineWidth=line_val, ...
         MarkerSize=mark_val)
 end
-if data_type == "Thr"
-    ylim_vec = [0 ceil(max(results_mat,[],"all"))];
-    ylabel("Throughput (bps/Hz)")
-    loc = "southeast";
-else
-    ylim_vec = [1e-6 1e-1];
+ylabel(ylabel_str)
+if y_type == "log"
     set(gca, 'YScale', 'log');
-    ylabel(data_type)
-    loc = "northeast";
 end
 grid on
 ylim(ylim_vec)

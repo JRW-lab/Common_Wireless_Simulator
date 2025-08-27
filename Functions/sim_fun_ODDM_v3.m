@@ -15,9 +15,16 @@ end
 % Define parameters
 res = 10;
 Es = 1;
-Eb = Es / log2(M_ary);
 N_iters = 3;
 syms_per_f = M*N;
+if CP
+    L1 = Q + 1;
+    L2 = Q + 1 + floor(2510*10^(-9) / Ts);
+    N_cp = ceil((L1+L2)/N);
+else
+    N_cp = 0;
+end
+Eb = (Es / log2(M_ary)) * (N+N_cp) / N;
 N0 = Eb / (10^(EbN0 / 10)) * ((N+2)/N);
 
 % Add redundancy for rectangular and sinc pulses
@@ -67,22 +74,37 @@ for frame = 1:new_frames
 
     % Generate H matrix and channel information
     t_offset = 2 * max_timing_offset * Ts * (rand - 0.5);
-    [HDD,L1,L2] = gen_HDD_direct(T,N,M,Fc,vel,Q,Ambig_Table,t_offset);
+    [HDD,L1,L2] = gen_HDD_direct(T,N,M,Fc,vel,Q,Ambig_Table,t_offset,CP);
 
     % Generate noise
-    zDD = sqrt(N0/2) * (randn(syms_per_f,1) + 1j*randn(syms_per_f,1));
+    if CP
+        zDD = sqrt(N0/2) * (randn(syms_per_f+N*N_cp,1) + 1j*randn(syms_per_f+N*N_cp,1));
+        zDD(1:(length(zDD)-M*N-L1-L2),:) = 0;
+    else
+        zDD = sqrt(N0/2) * (randn(syms_per_f,1) + 1j*randn(syms_per_f,1));
+    end
 
     % Construct received signal - Discrete
-    yDD = HDD * xDD + zDD;
+    if CP
+        xDD_tx = [xDD((M*N+1-N*N_cp):end); xDD];
+    else
+        xDD_tx = xDD;
+    end
+    yDD = HDD * xDD_tx + zDD;
 
     % Equalize received signal
     switch receiver_name
         case "CMC-MMSE"
-            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_CMC_MMSE_AWGN(yDD,HDD,N,M,L2,-L1,Es,N0,S,N_iters);
+            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_CMC_MMSE_AWGN(yDD,HDD,N,M+N_cp,L2+N_cp,-L1-N_cp,Es,N0,S,N_iters);
         case "MMSE"
             [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(yDD,HDD,Es,N0);
         otherwise
             error("Unsupported receiver for the simulated system!")
+    end
+
+    % Truncate received vector if CP
+    if CP
+        x_hat = x_hat((end-M*N+1):end);
     end
 
     % Hard detection for final x_hat

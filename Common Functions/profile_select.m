@@ -1,4 +1,4 @@
-function [profile_sel,num_frames] = profile_select(profile_names,frame_sel)
+function [profile_sel,num_frames,delete_sel] = profile_select(profile_names,frame_sel)
 
 % Parameters
 flag = true;
@@ -26,26 +26,28 @@ while flag
             fprintf(" ")
         end
         fprintf("||\n")
-
-        1;
-
     end
     fprintf("||________________________________________________||\n")
     fprintf("||________________________________________________||\n")
 
-    % Enter values
+    % Decision logic
     fprintf("\n")
     profile_sel = str2double(input(' > Select profile: ', 's'));
-    if frame_sel
-        num_frames = str2double(input(' > Enter number of frames: ', 's'));
-    end
-
-    % Error display
-    if profile_sel <= length(profile_names) && profile_sel > 0 && num_frames >= 0
+    if profile_sel <= length(profile_names) && profile_sel > 0
         flag = false;
     else
-        fprintf("\n   ❌ Enter valid values (>=0 frames)!\n");
+        fprintf("\n   ❌ Enter valid profile number!\n");
         input('', 's')
+    end
+    if frame_sel
+        num_frames = str2double(input(' > Enter number of frames: ', 's'));
+    else
+        num_frames = 0;
+    end
+    if num_frames == 0
+        delete_sel = false;
+    else
+        delete_sel = str2double(input(' > Delete selected data? ', 's'));
     end
 
 end

@@ -48,8 +48,8 @@ alpha = sys.rolloff;
 q = sys.q;
 T = sys.T;
 Ts = sys.Ts;
-Lp = sys.Lp;
-Ln = sys.Ln;
+Lp = sys.Lp + 1;
+Ln = sys.Ln - 1;
 if shape == "rect"
     q = 1;
     alpha = 1;
@@ -81,7 +81,7 @@ if isempty(load_test)
                     ambig_vals(k,l) = ambig_direct(ambig_t_range(k),ambig_f_range(l),Ts,shape,alpha,q,ambig_res);
                 end
             end
-            fprintf("\n")
+            % fprintf("\n")
 
             % Save to file
             save(filename,"ambig_t_range","ambig_f_range","ambig_vals");

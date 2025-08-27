@@ -23,8 +23,10 @@ F0 = 1 / (N*T);
 % Generate channel
 [Phi_i,tau_i,v_i] = channel_generation(Fc,v);
 
-L1 = Q;
-L2 = Q + floor(max(tau_i) / Ts);
+% Define channel taps
+L1 = Q + 1;
+L2 = Q + 1 + floor(max(tau_i) / Ts);
+L = L1 + L2;
 
 % Set up L tap range
 range1 = -M + (1:L2);
@@ -33,15 +35,19 @@ range3 = M - (L1:-1:1);
 L_range = [range1, range2, range3].';
 
 % Find all combinations of m,n,l,k - then only select valid ones
-m_range = 0:(M-1);
+if CP
+    M_cp = ceil((L1+L2)/N);
+else
+    M_cp = 0;
+end
+m_range = -M_cp:(M-1);
+l_range = -M_cp:(M-1);
 n_range = 0:(N-1);
-l_range = 0:(M-1);
 k_range = 0:(N-1);
 tap_combos = combvec(m_range,n_range,l_range,k_range).';
 l_minus_m = tap_combos(:,3) - tap_combos(:,1);
 
-needed_indices = ismember(l_minus_m,L_range); % CHANGE FOR CP
-% needed_indices = (l_minus_m >= -L1 & l_minus_m <= L2);
+needed_indices = ismember(l_minus_m,L_range);
 needed_combos = tap_combos(needed_indices,:);
 m = needed_combos(:,1);
 n = needed_combos(:,2);
@@ -65,13 +71,18 @@ h_sum = exp(-1j.*2.*pi.*n.*m./(N.*M)) .* Phi_i .* exp(1j.*2.*pi.*(v_i + n.*F0).*
 h = sum(h_sum,2);
 
 % Find all linear indices for H matrix
-H = zeros(M*N);
-H_index1 = l*N + k+1;
-H_index2 = m*N + n+1;
+H = zeros(length(unique(m))*length(unique(n)));
+H_index1 = l*N + k+1 - min(m_range)*N;
+H_index2 = m*N + n+1 - min(m_range)*N;
 linear_indices = sub2ind(size(H), H_index1, H_index2);
 
 % Assign values from h to the corresponding locations in H
 H(linear_indices) = h;
+
+% Delete unneeded blocks if using CP
+if CP
+    H(1:(size(H,1)-M*N-L1-L2),:) = 0;
+end
 
 % % ---- Map to Toeplitz matrix with CP ----
 % % Total length including CP
