@@ -7,7 +7,7 @@
 clc; clear;
 
 % Settings
-use_parellelization = 1;
+use_parellelization = 0;
 save_data.priority = "mysql"; % local or mysql
 save_data.save_excel = false;
 save_data.save_mysql = true;
@@ -25,7 +25,7 @@ save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".
 
 % Load profiles and select
 [all_profiles,profile_names] = saved_profiles();
-[profile_sel,num_frames,delete_sel] = profile_select(profile_names,true);
+[profile_sel,num_frames,delete_sel] = profile_select(all_profiles,profile_names,true);
 
 % Set number of frames per iteration and render settings
 frames_per_iter = 10;
@@ -39,9 +39,9 @@ save_sel = true;
 
 % Extract data from profile
 p_sel = all_profiles{profile_sel};
-fields = fieldnames(p_sel);
-for i = 1:numel(fields)
-    eval([fields{i} ' = p_sel.(fields{i});']);
+fields_names = fieldnames(p_sel);
+for i = 1:numel(fields_names)
+    eval([fields_names{i} ' = p_sel.(fields_names{i});']);
 end
 
 %% Database setup

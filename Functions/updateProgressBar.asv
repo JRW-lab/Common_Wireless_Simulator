@@ -4,17 +4,17 @@ function updateProgressBar(d)
 bar_len = 50;
 
 % Create variables
-full_bar = char("⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀");
+full_bar = char("⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀⠠⠐⠈⠈⠁⠂⠄⡀⢀");
 config_count = (d.primvar_sel - 1) * d.conf_len + d.sel;
 sim_count = config_count + (d.iter - 1) * d.prvr_len * d.conf_len;
 config_length = d.prvr_len * d.conf_len;
 sim_length = d.num_iters * config_length;
 pct = (sim_count / sim_length) * 100;
 filled_len = round(bar_len * sim_count / sim_length);
-% for i = 1:filled_len
-%     fprintf(full_bar(i))
-% end
-bar = [full_bar(1:filled_len), repmat(' ', 1, bar_len - filled_len)];
+for i = 1:filled_len
+    fprintf(full_bar(i))
+end
+bar = [full_bar, repmat(' ', 1, bar_len - filled_len)];
 if ~isfield(d, 'shape')
     d.shape = "ideal";
 end

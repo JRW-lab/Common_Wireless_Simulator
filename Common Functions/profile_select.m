@@ -1,4 +1,4 @@
-function [profile_sel,num_frames,delete_sel] = profile_select(profile_names,frame_sel)
+function [profile_sel,num_frames,delete_sel] = profile_select(all_profiles,profile_names,frame_sel)
 
 % Parameters
 flag = true;
@@ -47,7 +47,12 @@ while flag
     if num_frames == 0
         delete_sel = false;
     else
-        delete_sel = str2double(input(' > Delete selected data? ', 's'));
+        p_sel = all_profiles{profile_sel};
+        if ~isempty(p_sel.delete_configs)
+            delete_sel = str2double(input(' > Delete configs flagged in settings? ', 's'));
+        else
+            delete_sel = false;
+        end
     end
 
 end
