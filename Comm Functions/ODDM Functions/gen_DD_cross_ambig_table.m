@@ -1,4 +1,4 @@
-function [ambig_vals,ambig_t_range,ambig_f_range] = gen_DD_cross_ambig_table(N,M,T,Fc,v,shape,alpha,Q,res,CP)
+function [ambig_vals,ambig_t_range,ambig_f_range] = gen_DD_cross_ambig_table(N,M,T,Fc,v,shape,alpha,Q,res)
 
 % Add redundancy for rectangular pulses
 if shape == "rect"
@@ -8,7 +8,7 @@ elseif shape == "sinc"
 end
 
 % Define file and folder names
-file_name = sprintf('DD_table_N%d_M%d_T%d,Fc%d_v%d_%s_a%.2f_Q%d_%dres_%dCP',N,M,T,Fc,v,shape,alpha,Q,res,CP);
+file_name = sprintf('DD_table_N%d_M%d_T%d,Fc%d_v%d_%s_a%.2f_Q%d_%dres',N,M,T,Fc,v,shape,alpha,Q,res);
 folder_name = 'Pre-rendered Lookup Tables/ODDM DD Cross-Ambiguity Tables';
 full_path = folder_name + "/" + file_name + ".mat";
 
@@ -56,7 +56,7 @@ catch
         %     fprintf("x")
         % end
         for l = 1:length(ambig_f_range)
-            ambig_vals(k,l) = DD_cross_ambig(ambig_t_range(k),ambig_f_range(l),N,M,T,shape,alpha,Q,res,CP);
+            ambig_vals(k,l) = DD_cross_ambig(ambig_t_range(k),ambig_f_range(l),N,M,T,shape,alpha,Q,res);
         end
     end
     % fprintf("\nComplete!\n\n")

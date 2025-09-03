@@ -1,0 +1,8 @@
+Displaying results for profile 2:
+N sweep table:
+          {"receiver_name":"CMC-MMSE"}    {"receiver_name":"MP"}    {"receiver_name":"MMSE"}
+          ____________________________    ______________________    ________________________
+
+    16               0.3661                       11.663                    0.16271         
+
+>> 

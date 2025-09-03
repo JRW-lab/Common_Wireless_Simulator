@@ -26,7 +26,6 @@ F0 = 1 / (N*T);
 % Define channel taps
 L1 = Q + 1;
 L2 = Q + 1 + floor(max(tau_i) / Ts);
-L = L1 + L2;
 
 % Set up L tap range
 range1 = -M + (1:L2);
@@ -36,7 +35,7 @@ L_range = [range1, range2, range3].';
 
 % Find all combinations of m,n,l,k - then only select valid ones
 if CP
-    M_cp = ceil((L1+L2)/N);
+    M_cp = L1+L2;
 else
     M_cp = 0;
 end
@@ -79,10 +78,12 @@ linear_indices = sub2ind(size(H), H_index1, H_index2);
 % Assign values from h to the corresponding locations in H
 H(linear_indices) = h;
 
-% Delete unneeded blocks if using CP
-if CP
-    H(1:(size(H,1)-M*N-L1-L2),:) = 0;
-end
+% % Delete unneeded blocks if using CP
+% if CP
+%     H(1:(size(H,1)-M*N-L1-L2),:) = 0;
+% end
+
+1;
 
 % % ---- Map to Toeplitz matrix with CP ----
 % % Total length including CP

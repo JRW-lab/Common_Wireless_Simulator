@@ -1,5 +1,6 @@
 function gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data)
 
+clf
 % Figure settings
 figures_folder = 'Figures';
 line_val = 2;

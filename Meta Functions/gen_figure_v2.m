@@ -1,5 +1,6 @@
 function gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data)
 
+clf
 % Figure settings
 figures_folder = 'Figures';
 line_val = 2;

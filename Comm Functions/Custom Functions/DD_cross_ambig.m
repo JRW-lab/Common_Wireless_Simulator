@@ -1,4 +1,4 @@
-function Apg = DD_cross_ambig(t,f,N,M,T,shape,alpha,Q,res,CP)
+function Apg = DD_cross_ambig(t,f,N,M,T,shape,alpha,Q,res)
 % This function returns the result of the delay-Doppler domain cross
 % ambiguity function of two of the same shaped pulse filters, truncated to
 % [0 q*Ts]. Supported shapes are "rect", "sinc" and "rrc".
@@ -43,10 +43,10 @@ end
 if abs(t) <= Ta
     ambig_bias = 1;
 
-    % Add exponential component if CP
-    if CP
-        exp_sum = exp_sum + exp(1j*2*pi*f*t);
-    end
+    % % Add exponential component if CP
+    % if CP
+    %     exp_sum = exp_sum + exp(1j*2*pi*f*t);
+    % end
 elseif abs(t-T) <= Ta
     t = t-T;
     ambig_bias = exp(1j*2*pi*T*f);
@@ -54,10 +54,10 @@ elseif abs(t+T) <= Ta
     t = t+T;
     ambig_bias = exp(-1j*2*pi*T*f);
 
-    % Add exponential component if CP
-    if CP
-        exp_sum = exp_sum + exp(1j*2*pi*f*t);
-    end
+    % % Add exponential component if CP
+    % if CP
+    %     exp_sum = exp_sum + exp(1j*2*pi*f*t);
+    % end
 else
     ambig_bias = 0;
 end

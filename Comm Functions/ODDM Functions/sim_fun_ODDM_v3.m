@@ -17,14 +17,14 @@ res = 10;
 Es = 1;
 N_iters = 3;
 syms_per_f = M*N;
+L1 = Q + 1;
+L2 = Q + 1 + floor(2510*10^(-9) / Ts);
 if CP
-    L1 = Q + 1;
-    L2 = Q + 1 + floor(2510*10^(-9) / Ts);
-    N_cp = ceil((L1+L2)/N);
+    M_cp = L1 + L2;
 else
-    N_cp = 0;
+    M_cp = 0;
 end
-Eb = (Es / log2(M_ary)) * (N+N_cp) / N;
+Eb = (Es / log2(M_ary)) * (M+M_cp) / M;
 N0 = Eb / (10^(EbN0 / 10)) * ((N+2)/N);
 
 % Add redundancy for rectangular and sinc pulses
@@ -57,7 +57,7 @@ elseif M_ary == 4
 end
 
 % Render ambiguity table
-[Ambig_Table.vals,Ambig_Table.t_range,Ambig_Table.f_range] = gen_DD_cross_ambig_table(N,M,T,Fc,vel,shape,alpha,Q,res,CP);
+[Ambig_Table.vals,Ambig_Table.t_range,Ambig_Table.f_range] = gen_DD_cross_ambig_table(N,M,T,Fc,vel,shape,alpha,Q,res);
 
 % Reset bit errors for each SNR
 bit_errors = zeros(new_frames,syms_per_f*log2(M_ary));
@@ -74,19 +74,18 @@ for frame = 1:new_frames
 
     % Generate H matrix and channel information
     t_offset = 2 * max_timing_offset * Ts * (rand - 0.5);
-    [HDD,L1,L2] = gen_HDD_direct(T,N,M,Fc,vel,Q,Ambig_Table,t_offset,CP);
+    HDD = gen_HDD_direct(T,N,M,Fc,vel,Q,Ambig_Table,t_offset,CP);
 
     % Generate noise
     if CP
-        zDD = sqrt(N0/2) * (randn(syms_per_f+N*N_cp,1) + 1j*randn(syms_per_f+N*N_cp,1));
-        zDD(1:(length(zDD)-M*N-L1-L2),:) = 0;
+        zDD = sqrt(N0/2) * (randn(syms_per_f+N*M_cp,1) + 1j*randn(syms_per_f+N*M_cp,1));
     else
         zDD = sqrt(N0/2) * (randn(syms_per_f,1) + 1j*randn(syms_per_f,1));
     end
 
     % Construct received signal - Discrete
     if CP
-        xDD_tx = [xDD((M*N+1-N*N_cp):end); xDD];
+        xDD_tx = [xDD((M*N+1-N*M_cp):end); xDD];
     else
         xDD_tx = xDD;
     end
@@ -95,9 +94,11 @@ for frame = 1:new_frames
     % Equalize received signal
     switch receiver_name
         case "CMC-MMSE"
-            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_CMC_MMSE_AWGN(yDD,HDD,N,M+N_cp,L2+N_cp,-L1-N_cp,Es,N0,S,N_iters);
+            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_CMC_MMSE_AWGN(yDD,HDD,N,M+M_cp,L2+M_cp,-L1-M_cp,Es,N0,S,N_iters);
         case "MMSE"
             [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(yDD,HDD,Es,N0);
+        case "MP"
+            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MP(yDD,HDD,M_ary,M,N,S,N0);
         otherwise
             error("Unsupported receiver for the simulated system!")
     end
@@ -128,7 +129,7 @@ end
 
 % Get parameters for throughput
 frame_duration = N * T;
-bandwidth_hz = M / T;
+bandwidth_hz = (M + M_cp) / (T + Ts*(L1+L2));
 
 % Calculate BER, SER and FER
 metrics.BER = sum(bit_errors,"all") / (new_frames*syms_per_f*log2(M_ary));

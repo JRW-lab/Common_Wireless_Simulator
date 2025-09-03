@@ -4,11 +4,10 @@
 % profile. Data is saved in a MySQL server so a password is required.
 %
 % Coded 6/9/2025, JRW
-clc; clear;
+clc; clear;hyjjjjjjjjuty
 
 % Settings
 use_parellelization = 1;
-frames_per_iter = 10;
 save_data.priority = "mysql"; % local or mysql
 save_data.save_excel = false;
 save_data.save_mysql = true;
@@ -17,15 +16,8 @@ dbname     = 'comm_database';
 table_name = "results_TWC";
 
 % Set paths and data
-addpath(fullfile(pwd, 'Meta Functions'));
-addpath(fullfile(pwd, 'Comm Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/Custom Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/Generation Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/OFDM Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/OTFS Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/ODDM Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/TODDM Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/TX RX Functions'));
+addpath(fullfile(pwd, 'Common Functions'));
+addpath(fullfile(pwd, 'Functions'));
 javaaddpath('mysql-connector-j-8.4.0.jar');
 save_data.excel_folder = 'Data';
 save_data.excel_name = table_name;
@@ -36,6 +28,7 @@ save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".
 [profile_sel,num_frames,delete_sel] = profile_select(all_profiles,profile_names,true);
 
 % Set number of frames per iteration and render settings
+frames_per_iter = 10;
 if num_frames <= 0
     skip_simulations = true;
 else
@@ -329,8 +322,6 @@ if render_figure
     figure_data.save_sel = save_sel;
     clf
     switch vis_type
-        case "table"
-            gen_table(save_data,conn_local,table_name,hash_cell,configs,figure_data);
         case "figure"
             gen_figure_v2(save_data,conn_local,table_name,hash_cell,configs,figure_data);
         case "hexgrid"

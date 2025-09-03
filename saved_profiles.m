@@ -56,12 +56,13 @@ all_profiles = [all_profiles p];
 profile_names = [profile_names profile_name];
 
 %% PROFILE 2
-profile_name = "Receiver Comparison (CMC-MMSE/MMSE)";
+profile_name = "Receiver Comparison (CMC-MMSE/MP/MMSE)";
 p = struct;
-p.vis_type = "figure";
+% p.vis_type = "figure";
+p.vis_type = "table";
 p.data_type = "t_RXfull";
 p.primary_var = "N";
-p.primary_vals = 16:16:64;
+p.primary_vals = [16,32,64];
 p.default_parameters = struct(...
     'system_name', "ODDM",...
     'CP', false,...
@@ -79,28 +80,27 @@ p.default_parameters = struct(...
     'alpha', 0.4, ...
     'Q', 8);
 p.configs = {
-    struct('receiver_name','CMC-MMSE','M',32)
-    struct('receiver_name','CMC-MMSE','M',64)
-    struct('receiver_name','MMSE','M',32)
-    struct('receiver_name','MMSE','M',64)
+    struct('receiver_name','CMC-MMSE',"vel",120)
+    struct('receiver_name','MP',"vel",120)
+    struct('receiver_name','MMSE',"vel",120)
+    % struct('receiver_name','CMC-MMSE',"vel",500)
+    % struct('receiver_name','MP',"vel",500)
+    % struct('receiver_name','MMSE',"vel",500)
     };
 p.delete_configs = [];
 p.legend_vec = {
-    "CMC-MMSE, M=32"
-    "CMC-MMSE, M=64"
-    "MMSE, M=32"
-    "MMSE, M=64"
+    "CMC-MMSE"
+    "MP"
+    "MMSE"
     };
 p.line_styles = {
     "-x"
-    "--x"
     "-+"
-    "--+"
+    "-v"
     };
 p.line_colors = {...
     "#FF0000"
-    "#FF0000"
-    "#0000FF"
+    "#00FF00"
     "#0000FF"
     };
 all_profiles = [all_profiles p];
@@ -130,10 +130,10 @@ p.default_parameters = struct(...
     'alpha', 0.4, ...
     'Q', 8);
 p.configs = {
-    struct('M',32,'N',16)
-    struct('M',32,'N',64)
-    struct('M',64,'N',16)
-    struct('M',64,'N',64)
+    struct('N',16,'T',1/30000)
+    struct('N',32,'T',1/30000)
+    struct('N',16,'T',1/60000)
+    struct('N',32,'T',1/60000)
     };
 p.delete_configs = [];
 p.legend_vec = {

@@ -57,6 +57,11 @@ elseif shape == "sinc"
     alpha = 1;
 end
 
+% Change M if CP is used
+if CP
+    M = M + Lp - Ln;
+end
+
 load_test = sys.ambig_vals;
 if isempty(load_test)
     if shape ~= "rect"
