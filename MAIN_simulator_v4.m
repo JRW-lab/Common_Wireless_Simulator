@@ -314,6 +314,8 @@ end
 
 %% Figure generation
 % Set up figure data
+figure_data.ylim_vec = ylim_vec;
+figure_data.legend_loc = legend_loc;
 figure_data.data_type = data_type;
 figure_data.primary_var = primary_var;
 figure_data.primary_vals = primary_vals;
@@ -327,7 +329,6 @@ clc;
 fprintf("Displaying results for profile %d:\n",profile_sel)
 if render_figure
     figure_data.save_sel = save_sel;
-    clf
     switch vis_type
         case "table"
             gen_table(save_data,conn_local,table_name,hash_cell,configs,figure_data);

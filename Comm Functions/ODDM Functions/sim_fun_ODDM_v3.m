@@ -73,7 +73,8 @@ for frame = 1:new_frames
     [TX_bit,TX_sym,xDD] = gen_data(bit_order,S,syms_per_f);
 
     % Generate H matrix and channel information
-    t_offset = 2 * max_timing_offset * Ts * (rand - 0.5);
+    % t_offset = 2 * max_timing_offset * Ts * (rand - 0.5);
+    t_offset = max_timing_offset * Ts;
     HDD = gen_HDD_direct(T,N,M,Fc,vel,Q,Ambig_Table,t_offset,CP);
 
     % Generate noise
@@ -129,7 +130,7 @@ end
 
 % Get parameters for throughput
 frame_duration = N * T;
-bandwidth_hz = (M + M_cp) / (T + Ts*(L1+L2));
+bandwidth_hz = (M + M_cp) / T;
 
 % Calculate BER, SER and FER
 metrics.BER = sum(bit_errors,"all") / (new_frames*syms_per_f*log2(M_ary));

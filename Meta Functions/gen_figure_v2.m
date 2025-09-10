@@ -32,6 +32,8 @@ switch save_data.priority
 end
 
 % Import settings
+ylim_vec = figure_data.ylim_vec;
+loc = figure_data.legend_loc;
 data_type = figure_data.data_type;
 primary_var = figure_data.primary_var;
 primary_vals = figure_data.primary_vals;
@@ -98,20 +100,17 @@ end
 % Change y label depending on data type
 switch data_type
     case "Thr"
-        ylim_vec = [0 ceil(max(results_mat,[],"all"))];
         ylabel_str = "Throughput (bps/Hz)";
         loc = "northwest";
         y_type = "linear";
+        ylim_vec = [0 2];
     case "t_RXfull"
         results_mat = results_mat * 10^3;
-        ylim_vec = [0 ceil(max(results_mat,[],"all"))];
         ylabel_str = "t_{RX,avg} (ms)";
-        loc = "northwest";
-        y_type = "linear";
+        % y_type = "linear";
+        y_type = "log";
     otherwise
-        ylim_vec = [1e-6 1e-1];
         ylabel_str = data_type;
-        loc = "southwest";
         y_type = "log";
 end
 
@@ -128,9 +127,11 @@ end
 ylabel(ylabel_str)
 if y_type == "log"
     set(gca, 'YScale', 'log');
+    ylim(ylim_vec)
+else
+    ylim([0 max(results_mat,[],"all")])
 end
 grid on
-ylim(ylim_vec)
 xlabel(xlabel_name)
 xlim([min(primary_vals) max(primary_vals)])
 xticks(primary_vals)

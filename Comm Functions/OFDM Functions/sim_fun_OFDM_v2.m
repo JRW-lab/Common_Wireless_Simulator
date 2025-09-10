@@ -6,9 +6,13 @@ for i = 1:numel(fields)
     eval([fields{i} ' = parameters.(fields{i});']);
 end
 
-% Check CP requirement
+% Change settings if CP
 if CP
-    error("This system does not have CP support yet!")
+    Ts = T / M;
+    L1 = 1;
+    L2 = 1 + floor(2510*10^(-9) / Ts);
+    M_cp = L1 + L2;
+    M = M + M_cp;
 end
 
 % Input conversion
@@ -63,8 +67,15 @@ for frame = 1:new_frames
     % TX
     [TX_data,s] = generate_data(S,N);
 
+    % Truncate data if using CP
+    if CP
+        TX_data = TX_data(M_cp+1:end,:);
+        s(1:M_cp) = s((N-M_cp+1):end);
+    end
+
     % Channel
-    t_offset = 2 * max_timing_offset * T2 * (rand - 0.5);
+    % t_offset = 2 * max_timing_offset * T2 * (rand - 0.5);
+    t_offset = max_timing_offset * T2;
     h_T = generate_fading(N*u,L_efct,F_d,T2,t_offset);
     g_T = R_h_half * h_T;
 
@@ -97,6 +108,7 @@ for frame = 1:new_frames
             [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_CMC_MMSE_AWGN(y_F,G_F,1,N,0,0,1,N0,S,3);
             RX_data = demodulator(x_hat,S);
         case "MMSE"
+            y_F = G_F * s + z_F;
             [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(y_F,G_F,1,N0);
             RX_data = demodulator(x_hat,S);
         case "DD-BDFE"
@@ -148,6 +160,11 @@ for frame = 1:new_frames
             error("Unsupported receiver for the simulated system!")
     end
 
+    % Truncate received vector if CP
+    if CP
+        RX_data = RX_data(M_cp+1:end,:);
+    end
+
     % Compute number of errors in this frame and add to stack
     error_vec = RX_data ~= TX_data;
     bit_errors(frame) = log2(M_ary) * sum(error_vec(:));
@@ -161,6 +178,11 @@ end
 % Get parameters for throughput
 frame_duration = T;
 bandwidth_hz = N / T;
+
+% Adjust symbols per frame for calculations if using CP
+if CP
+    syms_per_f = N-M_cp;
+end
 
 % Calculate metrics
 metrics.BER = sum(bit_errors,"all") / (new_frames*syms_per_f*log2(M_ary));
