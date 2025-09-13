@@ -38,8 +38,8 @@ catch
     % Set ambiguity range
     dt = Ts / res;
     df = F0 / res;
-    ambig_t_lim_lower = (M-1)*Ts + max_tau;
-    ambig_t_lim_upper = (M-1)*Ts;
+    ambig_t_lim_lower = M*Ts + max_tau;
+    ambig_t_lim_upper = M*Ts;
     ambig_f_lim = (M-1)*F0 + ((v * (1000/3600))*Fc) / (physconst('LightSpeed'));
     ambig_t_lim_lower = ceil(ambig_t_lim_lower / dt) * dt;
     ambig_t_lim_upper = ceil(ambig_t_lim_upper / dt) * dt;

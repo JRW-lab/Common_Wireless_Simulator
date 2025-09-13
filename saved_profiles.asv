@@ -141,12 +141,12 @@ p.configs = {
     };
 p.delete_configs = [];
 p.legend_vec = {
-    "MPA, N=16"
-    "MPA, N=64"
-    "MMSE, N=16"
-    "MMSE, N=64"
-    "CMC-MMSE, N=16"
-    "CMC-MMSE, N=64"
+    "MPA,N=16"
+    "MPA,N=64"
+    "MMSE,N=16"
+    "MMSE,N=64"
+    "CMC-MMSE,N=16"
+    "CMC-MMSE,N=64"
     };
 p.line_styles = {
     "-x"
@@ -157,12 +157,12 @@ p.line_styles = {
     "--v"
     };
 p.line_colors = {...
+    "#00FF00"
+    "#00FF00"
     "#FF0000"
     "#FF0000"
     "#0000FF"
     "#0000FF"
-    "#000000"
-    "#000000"
     };
 p.vis_type = "figure";
 p.data_type = "BER";
@@ -217,6 +217,6 @@ p.line_colors = {...
 p.vis_type = "figure";
 p.data_type = "BER";
 p.legend_loc = "southwest";
-p.ylim_vec = [1e-6 1e-2];
+p.ylim_vec = [1e-5 1e-2];
 all_profiles = [all_profiles p];
 profile_names = [profile_names profile_name];

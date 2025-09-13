@@ -55,15 +55,19 @@ k = needed_combos(:,4);
 
 % Find indices in ambiguity values corresponding with the coefficient eq.
 ambig_t_locs = (l-m).*Ts - tau_i + t_offset;
-ambig_t_indices = knnsearch(ambig_t_range(:), ambig_t_locs(:));
-ambig_t_indices = reshape(ambig_t_indices, size(ambig_t_locs));
 ambig_f_locs = (k-n).*F0 - v_i;
-ambig_f_indices = knnsearch(ambig_f_range(:), ambig_f_locs(:));
-ambig_f_indices = reshape(ambig_f_indices, size(ambig_f_locs));
+% ambig_t_indices = knnsearch(ambig_t_range(:), ambig_t_locs(:));
+% ambig_t_indices = reshape(ambig_t_indices, size(ambig_t_locs));
+% ambig_f_indices = knnsearch(ambig_f_range(:), ambig_f_locs(:));
+% ambig_f_indices = reshape(ambig_f_indices, size(ambig_f_locs));
+% 
+% % Convert subscripts to linear indices and select ambiguity values
+% linear_indices = sub2ind(size(ambig_vals), ambig_t_indices, ambig_f_indices);
+% ambig_inst = ambig_vals(linear_indices);
 
-% Convert subscripts to linear indices and select ambiguity values
-linear_indices = sub2ind(size(ambig_vals), ambig_t_indices, ambig_f_indices);
-ambig_inst = ambig_vals(linear_indices);
+%%% More efficient way to find ambiguity values
+ambig_inst = interp2(ambig_f_range, ambig_t_range, ambig_vals, ...
+                     ambig_f_locs, ambig_t_locs, 'linear', 0);
 
 % Define all elements of h summation, then sum across 2nd dimension
 h_sum = exp(-1j.*2.*pi.*n.*m./(N.*M)) .* Phi_i .* exp(1j.*2.*pi.*(v_i + n.*F0).*(l.*Ts-tau_i+t_offset)) .* ambig_inst;

@@ -14,7 +14,7 @@ Fs = 1 / Ts;
 [~, tau_i] = channel_generation(Fc,vel);
 
 % Set ambiguity range
-t_taps = (-(M-1)*Ts:Ts:(M-1)*Ts) - tau_i.';
+t_taps = (-M*Ts:Ts:M*Ts) - tau_i.';
 max_Doppler = (vel * (1000/3600))*Fc / physconst('LightSpeed');
 count = 0;
 f_taps = zeros(2*U-1,res);

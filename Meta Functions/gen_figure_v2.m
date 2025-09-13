@@ -127,16 +127,16 @@ end
 ylabel(ylabel_str)
 if y_type == "log"
     set(gca, 'YScale', 'log');
-    ylim(ylim_vec)
-else
-    ylim([0 max(results_mat,[],"all")])
 end
+ylim(ylim_vec)
 grid on
 xlabel(xlabel_name)
 xlim([min(primary_vals) max(primary_vals)])
 xticks(primary_vals)
 legend(legend_vec,Location=loc);
 set(gca, 'FontSize', font_val);
+set(gca, 'Box', 'on');
+% set(gca, 'LineWidth', line_val);
 
 % Save figure
 timestamp = datetime('now', 'Format', 'yyyyMMdd_HHmmss');

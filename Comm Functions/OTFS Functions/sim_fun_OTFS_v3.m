@@ -74,7 +74,7 @@ if isempty(load_test)
             ambig_f_range = loaded_file.ambig_f_range;
             ambig_vals = loaded_file.ambig_vals;
         else
-            ambig_t_lim = Ts*(q + ceil((2510*10^(-9))/Ts));
+            ambig_t_lim = Ts*(1 + q + ceil((2510*10^(-9))/Ts));
             ambig_f_lim = ((vel * (1000/3600))*Fc) / (physconst('LightSpeed'));
             ambig_t_range = linspace(-ambig_t_lim,ambig_t_lim,ambig_res);
             ambig_f_range = linspace(-ambig_f_lim,ambig_f_lim,ambig_res);
