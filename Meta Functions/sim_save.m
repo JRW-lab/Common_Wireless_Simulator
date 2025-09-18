@@ -53,9 +53,15 @@ if run_flag
         case "ODDM"
             metrics_add = sim_fun_ODDM_v3(new_frames,parameters);
         case "OTFS"
-            metrics_add = sim_fun_OTFS_v3(new_frames,parameters);
+            metrics_add = sim_fun_OTFS(new_frames,parameters); % Common method in literature
+        case "OTFS-DD"
+            metrics_add = sim_fun_OTFS_DD_v3(new_frames,parameters); % Dr. Jingxian Wu's design
         case "OFDM"
-            metrics_add = sim_fun_OFDM_v2(new_frames,parameters);
+            if parameters.CP
+                metrics_add = sim_fun_OFDM_v2(new_frames,parameters);
+            else
+                error("CP-Less OFDM isn't supported yet!")
+            end
     end
 
     % Write to database

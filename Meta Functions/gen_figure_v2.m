@@ -92,7 +92,7 @@ switch primary_var
     case "frequency_limit"
         xlabel_name = "Cutoff Frequency (Hz)";
     case "max_timing_offset"
-        xlabel_name = "|\tau_{e,max}| (in T_s)";
+        xlabel_name = "|\tau_e| (in T_s)";
     otherwise
         xlabel_name = primary_var;
 end

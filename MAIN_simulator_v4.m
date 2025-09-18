@@ -7,7 +7,7 @@
 clc; clear;
 
 % Settings
-use_parellelization = 1;
+use_parellelization = 0;
 frames_per_iter = 10;
 save_data.priority = "mysql"; % local or mysql
 save_data.save_excel = false;
@@ -23,6 +23,7 @@ addpath(fullfile(pwd, 'Comm Functions'));
     addpath(fullfile(pwd, 'Comm Functions/Generation Functions'));
     addpath(fullfile(pwd, 'Comm Functions/OFDM Functions'));
     addpath(fullfile(pwd, 'Comm Functions/OTFS Functions'));
+    addpath(fullfile(pwd, 'Comm Functions/OTFS-DD Functions'));
     addpath(fullfile(pwd, 'Comm Functions/ODDM Functions'));
     addpath(fullfile(pwd, 'Comm Functions/TODDM Functions'));
     addpath(fullfile(pwd, 'Comm Functions/TX RX Functions'));
@@ -162,6 +163,9 @@ for primvar_sel = 1:prvr_len
         if exist("parameters.shape",'var')
             if parameters.shape ~= "rrc"
                 parameters = rmfield(parameters, 'alpha');
+            end
+            if parameters.shape == "rect" || parameters.shape == "ideal"
+                parameters.Q = 1;
             end
         end
 

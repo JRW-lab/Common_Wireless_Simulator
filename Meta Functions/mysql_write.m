@@ -8,10 +8,10 @@ mysql_flag_id = 0;
 need_to_write = true;
 while need_to_write
 
-    % Check system usage flag
-    flag_val = mysql_check(conn,mysql_flag_id);
-
-    if ~flag_val
+    % % Check system usage flag
+    % flag_val = mysql_check(conn,mysql_flag_id);
+    % 
+    % if ~flag_val
 
         % Set system usage flag
         mysql_set(conn,mysql_flag_id);
@@ -73,12 +73,12 @@ while need_to_write
         mysql_unset(conn,mysql_flag_id);
         need_to_write = false;
 
-    else
-
-        % Wait a random time between 1 and 5 seconds
-        waitTime = 1 + (5 - 1) * rand();
-        pause(waitTime);
-
-    end
+    % else
+    % 
+    %     % Wait a random time between 1 and 5 seconds
+    %     waitTime = 1 + (5 - 1) * rand();
+    %     pause(waitTime);
+    % 
+    % end
 
 end

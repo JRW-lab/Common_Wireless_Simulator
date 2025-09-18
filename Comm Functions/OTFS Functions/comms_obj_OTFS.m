@@ -1,4 +1,4 @@
-classdef comms_obj_OTFS
+classdef comms_obj_OTFS < handle
     %% COMMS_OBJ
     %% A "brief" instruction
     % This class sets up a OTFS system to simulate for SER under
@@ -25,46 +25,40 @@ classdef comms_obj_OTFS
 
     %% Properties ---------------------------------------------------------
     properties
-        % Save system setting number to save externally
-        % setting_number = 1;
+        % Covariance matrices and settings
+        RzDD;    % Doppler-Delay domain Covariance matrix for noise components
+        %        Needs to be multiplied by N0 to get final covariance matrix RzDD
 
         % General system settings
         M_ary = 4;                  % Modulation order
         select_mod = "MPSK";    % Select: MPSK
         %                                 MQAM
         %                                 MASK [BUILT, NOT TESTED]
+        select_filter = "rect"; % Select: rect (rectangular pulses)
+        %                                 sinc (sinc pulses)
+        %                                 ideal
 
         % Common Settings
-        EbN0_db = 0;           % Normalized Signal-to-Noise Ratio
+        Eb_N0_db = 0;           % Normalized Signal-to-Noise Ratio
         sbcar_spacing = 15e3;   % Subcarrier spacing (inverse of sym period)
-        N_tsyms = 16;           % Number of time symbols
-        M_sbcars = 64;          % Number of subcarriers
+        N_tsyms = 8;            % Number of time symbols
+        M_sbcars = 32;           % Number of subcarriers
         Fc = 4e9;               % Carrier frequency (Hz)
-        v_vel = 500;            % Vehicular velocity (km/hr)
-
-        % Filter Settings
-        filter = "rrc";     % Shape of TX/RX filters (rect/sinc/rrc)
-        rolloff = 1;        % Rolloff factor for RRC filters
-        q = 1;              % Increase beyond 1 to allow non-causal channel taps
+        v_vel = 500;             % Vehicular velocity (km/hr)
 
         % Variables that usually aren't changed
-        Es_with_CS = 1;         % Energy per symbol including cyclic syms
+        Es = 1;                             % Energy per symbol
 
-        DEPENDENT_VARIABLES = [];
+        DEPENDENT_VARIABLES__________ = [];
     end
 
     properties (Dependent)
         Eb;             % Energy per bit
-        Es;             % Energy per bit
         N0;             % Noise covariance
 
         S;              % Symbol alphabet (use externally for equalization)
         T;              % Period of one symbol
-        Ts;             % Period for one subcarrier
         syms_per_f;     % Symbols per frame
-
-        Lp;             % Cyclic prefix length
-        Ln;             % Cyclic postfix length
     end
 
     methods
@@ -74,44 +68,27 @@ classdef comms_obj_OTFS
             value = obj.M_sbcars * obj.N_tsyms;
         end
 
-        function value = get.Es(obj)
-            syms_frame = obj.N_tsyms * obj.M_sbcars;
-            syms_CS = syms_frame + obj.Lp - obj.Ln;
-            value = obj.Es_with_CS * syms_CS / syms_frame;
-        end
-
         function value = get.Eb(obj)
-            value = obj.Es_with_CS / log2(obj.M_ary);
+            value = obj.Es / log2(obj.M_ary);
         end
 
         function value = get.N0(obj)
-            value = obj.Eb / (10^(obj.EbN0_db / 10));
+            value = obj.Eb / (10^(obj.Eb_N0_db / 10));
         end
 
         function value = get.T(obj)
             value = 1 / obj.sbcar_spacing;
         end
 
-        function value = get.Ts(obj)
-            value = obj.T / obj.M_sbcars;
-        end
-
         function value = get.S(obj)
             alphabet_set = linspace(1,obj.M_ary,obj.M_ary)';
             if obj.select_mod == "MPSK"
                 % value = sqrt(obj.Es) .* exp(-1j * 2*pi .* (alphabet_set) ./ obj.M_ary);
-
-                % For Dr. Wu's version
-                if obj.M_ary == 2
-                    value = sqrt(obj.Es) .* exp(-1j * 2*pi .* (alphabet_set) ./ obj.M_ary);
-                elseif obj.M_ary == 4
-                    value = zeros(4,1);
-                    value(1) = (sqrt(2)/2) + (1j*sqrt(2)/2);
-                    value(2) = (sqrt(2)/2) - (1j*sqrt(2)/2);
-                    value(3) = -(sqrt(2)/2) + (1j*sqrt(2)/2);
-                    value(4) = -(sqrt(2)/2) - (1j*sqrt(2)/2);
-                    value = sqrt(obj.Es_with_CS) .* value;
-                end
+                value = zeros(4,1);
+                value(1) = (sqrt(2)/2) + (1j*sqrt(2)/2);
+                value(2) = (sqrt(2)/2) - (1j*sqrt(2)/2);
+                value(3) = -(sqrt(2)/2) + (1j*sqrt(2)/2);
+                value(4) = -(sqrt(2)/2) - (1j*sqrt(2)/2);
             elseif obj.select_mod == "MQAM"
                 value = zeros(obj.M_ary,1);
                 for k = 1:obj.M_ary
@@ -120,27 +97,52 @@ classdef comms_obj_OTFS
                     value(k) = I + 1i * Q;
                 end
                 avgPwr = sqrt(mean(abs(value).^2));
-                value = obj.Es_with_CS * value / avgPwr;
+                value = obj.Es * value / avgPwr;
             elseif obj.select_mod == "MASK"
                 avgPwr = sqrt(mean(abs(alphabet_set)^2));
-                value = obj.Es_with_CS * alphabet_set / avgPwr;
+                value = obj.Es * alphabet_set / avgPwr;
             end
         end
 
-        function value = get.Lp(obj)
-            if obj.filter == "rect"
-                value =  1 + floor((2510*10^(-9)) / obj.Ts);
-            else
-                value =  obj.q + floor((2510*10^(-9)) / obj.Ts);
+        %% INTERNAL FUNCTIONS ---------------------------------------------
+
+        function result = get.RzDD(obj)
+
+            % Create each element of Rp
+            RzTF = zeros(obj.N_tsyms*obj.M_sbcars);
+            for m1 = 0:obj.M_sbcars-1
+                for m2 = 0:obj.M_sbcars-1
+                    for n1 = 0:obj.N_tsyms-1
+                        for n2 = 0:obj.N_tsyms-1
+                            RzTF(m1*obj.N_tsyms+n1+1,m2*obj.N_tsyms+n2+1) = obj.N0 * ...
+                                exp(1j*2*pi*m2*(n1-n2)*obj.sbcar_spacing*obj.T) * ...
+                                xambig((n1-n2)*obj.T,(m1-m2)*obj.sbcar_spacing,obj.T,obj.select_filter);
+                        end
+                    end
+                end
             end
+
+            % Create DFT matrices and needed Kronecker product
+            F_N = obj.gen_DFT(obj.N_tsyms);
+            F_M = obj.gen_DFT(obj.M_sbcars);
+            F_cur = kron(F_M,F_N');
+
+            % Create final result
+            result = F_cur' * RzTF * F_cur;
         end
 
-        function value = get.Ln(obj)
-            if obj.filter == "rect"
-                value =  0;
-            else
-                value =  -obj.q;
+        function F_N = gen_DFT(~,size)
+            % This is a function for generating the normalized N-point Discrete Fourier
+            % Transform matrix
+            omega = exp(-1j * 2*pi / (size));
+            F_N = zeros(size);
+            for m = 1:1:size
+                for n = 1:1:size
+                    F_N(m,n) = omega^((m-1) * (n-1));
+                end
             end
+
+            F_N = F_N / sqrt(size);
         end
         
     end
