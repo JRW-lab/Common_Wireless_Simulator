@@ -29,8 +29,8 @@ p.default_parameters = struct(...
 p.configs = {
     % struct('system_name','OFDM','M',64*16,"vel",120)
     % struct('system_name','OFDM','M',64*16,"vel",500)
-    struct('system_name','OTFS',"vel",120,'CP',true,'shape','ideal','receiver_name','BDFE')
-    struct('system_name','OTFS',"vel",500,'CP',true,'shape','ideal','receiver_name','BDFE')
+    struct('system_name','OTFS',"vel",120,'CP',true,'shape','ideal','receiver_name','MMSE')
+    struct('system_name','OTFS',"vel",500,'CP',true,'shape','ideal','receiver_name','MMSE')
     struct('system_name','ODDM',"vel",120,'CP',true)
     struct('system_name','ODDM',"vel",500,'CP',true)
     struct('system_name','ODDM',"vel",120)

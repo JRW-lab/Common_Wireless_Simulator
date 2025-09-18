@@ -7,7 +7,7 @@
 clc; clear;
 
 % Settings
-use_parellelization = 0;
+use_parellelization = 1;
 frames_per_iter = 10;
 save_data.priority = "mysql"; % local or mysql
 save_data.save_excel = false;

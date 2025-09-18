@@ -68,10 +68,11 @@ for frame = 1:new_frames
     %     bin_TX = double(bin_TX);
     %     X_DD = X_DD.';
     % end
-    bin_TX = (rand(1, N_bit_per_slot) > 0.5);
-    X_DD = modulator_OTFS(bin_TX, M_ary);
-    bin_TX = double(bin_TX).';
-    X_DD = X_DD.';
+        bin_TX = (rand(1, N_bit_per_slot) > 0.5);
+        X_DD = modulator_OTFS(bin_TX, M_ary);
+
+        bin_TX = double(bin_TX).';
+        X_DD = X_DD.';
 
     % Truncate data if using CP
     if CP
@@ -167,7 +168,11 @@ for frame = 1:new_frames
     end
 
     % Find error count for frame
-    data_error_vec = X_DD ~= x_hat;
+    if receiver_name == "ML"
+        data_error_vec = data_TX ~= data_RX;
+    else
+        data_error_vec = X_DD ~= x_hat;
+    end
     bin_error_vec = bin_TX ~= bin_RX;
 
     % Truncate received vector if CP
