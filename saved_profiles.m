@@ -57,12 +57,11 @@ p.line_styles = {
     "-square"
     };
 p.line_colors = {...
-    "#FF00FF"
-    "#FF00FF"
     "#FF0000"
     "#FF0000"
     "#0000FF"
     "#0000FF"
+    "#000000"
     "#000000"
     };
 p.vis_type = "figure";
