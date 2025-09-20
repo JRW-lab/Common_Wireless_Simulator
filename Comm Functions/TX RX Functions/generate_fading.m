@@ -1,4 +1,4 @@
-function [fading] = generate_fading(Ns, L, Fd, Ts)
+function [fading] = generate_fading(Ns, L, Fd, Ts, t_offset)
 % FUNCTION FADING = RAYLEIGH1I_quick(Ns, Fd, Ts)
 %    Fd : Maxmimum Doppler Frequency
 %    Ts : Sampling Period
@@ -33,7 +33,7 @@ for l = 1:L
     psi = (2*rand(1,M)-1)*pi;
     alpha = (2*pi*n-pi+theta)/(4*M);
     omega_d = 2*pi*Fd;
-    t = (0:Ns-1)*Ts;
+    t = (0:Ns-1)*Ts + t_offset;
 
     omega_t = omega_d*cos(alpha)'*t;
     phase_c = omega_t + phi.'*ones(1, Ns);

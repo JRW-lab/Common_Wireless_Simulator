@@ -49,6 +49,19 @@ elseif receiver_name == "BDFE"
     iters_vec = num_BDFE_iters * iters_vec;
 end
 
+% Get CP variables
+tsym_jump = syms_per_f/N;
+tsym_jump_bin = 2*syms_per_f/N;
+CP_indices = 1:M_cp;
+CP_indices_bin = 1:2*M_cp;
+end_indices = M-M_cp+1:M;
+CP_remove_data = [];
+CP_remove_bin = [];
+for n = 1:N
+    CP_remove_data = [CP_remove_data, tsym_jump*(n-1) + CP_indices];
+    CP_remove_bin = [CP_remove_bin, tsym_jump_bin*(n-1) + CP_indices_bin];
+end
+
 % Simulation loop
 data_errors = 0;
 bin_errors = 0;
@@ -75,7 +88,11 @@ for frame = 1:new_frames
 
     % Truncate data if using CP
     if CP
-        X_DD(1:N*M_cp) = X_DD(((M-M_cp)*N+1):end);
+        for n = 1:N
+            CP_iter = tsym_jump*(n-1) + CP_indices;
+            end_iter = tsym_jump*(n-1) + end_indices;
+            X_DD(CP_iter) = X_DD(end_iter);
+        end
     end
 
     % Generate channel
@@ -172,8 +189,8 @@ for frame = 1:new_frames
 
     % Truncate received vector if CP
     if CP
-        data_error_vec = data_error_vec(N*M_cp+1:end);
-        bin_error_vec = bin_error_vec(N*M_cp*log2(M_ary)+1:end);
+        data_error_vec(CP_remove_data) = [];
+        bin_error_vec(CP_remove_bin) = [];
     end
 
     % Update SER and BER
