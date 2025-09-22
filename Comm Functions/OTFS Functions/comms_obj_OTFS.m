@@ -49,6 +49,10 @@ classdef comms_obj_OTFS < handle
         % Variables that usually aren't changed
         Es = 1;                             % Energy per symbol
 
+        % Realistic pulse shape parameters
+        alpha = 1;
+        Q = 2;
+
         DEPENDENT_VARIABLES__________ = [];
     end
 
@@ -114,9 +118,14 @@ classdef comms_obj_OTFS < handle
                 for m2 = 0:obj.M_sbcars-1
                     for n1 = 0:obj.N_tsyms-1
                         for n2 = 0:obj.N_tsyms-1
-                            RzTF(m1*obj.N_tsyms+n1+1,m2*obj.N_tsyms+n2+1) = obj.N0 * ...
+                            t = (n1-n2)*obj.T;
+                            f = (m1-m2)*obj.sbcar_spacing;
+                            % RzTF(m1*obj.N_tsyms+n1+1,m2*obj.N_tsyms+n2+1) = obj.N0 * ...
+                            %     exp(1j*2*pi*m2*(n1-n2)*obj.sbcar_spacing*obj.T) * ...
+                            %     xambig((n1-n2)*obj.T,(m1-m2)*obj.sbcar_spacing,obj.T,obj.select_filter);
+                            RzTF(m1*obj.N_tsyms+n1+1,m2*obj.N_tsyms+n2+1) = ...
                                 exp(1j*2*pi*m2*(n1-n2)*obj.sbcar_spacing*obj.T) * ...
-                                xambig((n1-n2)*obj.T,(m1-m2)*obj.sbcar_spacing,obj.T,obj.select_filter);
+                                exp(1j*2*pi*f*t) * ambig_direct(t,-f,obj.T,obj.select_filter,obj.alpha,obj.Q,10);
                         end
                     end
                 end

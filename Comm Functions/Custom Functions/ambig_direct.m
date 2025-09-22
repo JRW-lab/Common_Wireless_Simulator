@@ -19,26 +19,44 @@ function result = ambig_direct(t,f,Ts,shape,alpha,q,res)
 %
 % Coded by Jeremiah Rhys Wimer, 6/4/2024
 
-% Define resolution of "integration"
-dt = Ts / res;
-t_range = 0:dt:q*Ts;
+if shape == "ideal"
+    if t == 0 && f == 0
+        result = 1;
+    else
+        result = 0;
+    end
 
-% Define TX/RX filters
-switch shape
-    case "rect"
-        filter_1 = gen_rect_filter(t_range-t,Ts,q/2);
-        filter_2 = gen_rect_filter(t_range,Ts,q/2);
-    case "sinc"
-        filter_1 = sinc_trunc((t_range-t - q*Ts/2),Ts,q/2); 
-        filter_2 = sinc_trunc((t_range - q*Ts/2),Ts,q/2);
-    case "rrc"
-        filter_1 = RRCt_trunc((t_range-t - q*Ts/2),alpha,Ts,q/2);
-        filter_2 = RRCt_trunc((t_range - q*Ts/2),alpha,Ts,q/2);
+else
+    % Define resolution of "integration"
+    dt = Ts / res;
+
+    % Define TX/RX filters
+    switch shape
+        case "rect"
+            t_range = 0:dt:Ts;
+            filter_1 = gen_rect_filter(t_range-t,Ts,q/2);
+            filter_2 = gen_rect_filter(t_range,Ts,q/2);
+        case "sinc"
+            t_range = -q*Ts:dt:q*Ts;
+            % filter_1 = sinc_trunc((t_range-t - q*Ts/2),Ts,q/2);
+            % filter_2 = sinc_trunc((t_range - q*Ts/2),Ts,q/2);
+            filter_1 = sinc_trunc(t_range-t,Ts,q);
+            filter_2 = sinc_trunc(t_range,Ts,q);
+        case "rrc"
+            t_range = -q*Ts:dt:q*Ts;
+            % filter_1 = RRCt_trunc((t_range-t - q*Ts/2),alpha,Ts,q/2);
+            % filter_2 = RRCt_trunc((t_range - q*Ts/2),alpha,Ts,q/2);
+            filter_1 = RRCt_trunc(t_range-t,alpha,Ts,q);
+            filter_2 = RRCt_trunc(t_range,alpha,Ts,q);
+        otherwise
+            error("Unsupported shape!")
+    end
+
+    % Defind integration function
+    fun_vec = filter_1 .* filter_2 .* exp(1j.*2.*pi.*t_range.*f);
+    norm_val = sum((filter_2 .* filter_2).*dt,"all");
+    result = sum(fun_vec.*dt,"all") / norm_val;
+
 end
-
-% Defind integration function
-fun_vec = filter_1 .* filter_2 .* exp(1j.*2.*pi.*t_range.*f);
-norm_val = sum((filter_2 .* filter_2).*dt,"all");
-result = sum(fun_vec.*dt,"all") / norm_val;
 
 end

@@ -17,8 +17,6 @@ L2 = floor(2510*10^(-9) / Ts);
 if CP
     M_cp = L1 + L2;
     M = M + M_cp;
-    Ts = T / M;
-    L2 = floor(2510*10^(-9) / Ts);
 end
 
 % Input conversion
@@ -110,8 +108,6 @@ else
     RzDD = obj.RzDD;
     save(filename,"RzDD");
 end
-[U_z, D_z, ~] = svd(RzDD);
-R_z_half = (U_z * sqrt(D_z));
 
 % Simulation loop
 data_errors = 0;
@@ -138,10 +134,7 @@ for frame = 1:new_frames
 
     % Generate channel
     H_DD = generate_HDD(obj,ambig_vals,ambig_t_range,ambig_f_range,L1+L2);
-
-    % Generate noise
-    n = sqrt(N0 / 2) * (randn(syms_per_f,1) + 1j*randn(syms_per_f,1));
-    Z_DD = R_z_half * n;
+    Z_DD = generate_noise(N0 * RzDD);
 
     % Create receive vector
     Y_DD = H_DD * X_DD + Z_DD;

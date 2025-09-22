@@ -64,10 +64,10 @@ end
 load_test = sys.ambig_vals;
 if isempty(load_test)
     if shape ~= "rect"
-        if ~exist("Pre-rendered Lookup Tables\\OTFS DD Cross-Ambiguity Tables", 'dir')
-            mkdir("Pre-rendered Lookup Tables\\OTFS DD Cross-Ambiguity Tables")
+        if ~exist("Pre-rendered Lookup Tables\\OTFS-DD Cross-Ambiguity Tables", 'dir')
+            mkdir("Pre-rendered Lookup Tables\\OTFS-DD Cross-Ambiguity Tables")
         end
-        filename = sprintf("Pre-rendered Lookup Tables\\OTFS DD Cross-Ambiguity Tables\\ambig_discrete_M%d_N%d_T%d_Fc%d_vel%d_%s_alpha%.1f_q%d.mat",M,N,T,Fc,vel,shape,alpha,q);
+        filename = sprintf("Pre-rendered Lookup Tables\\OTFS-DD Cross-Ambiguity Tables\\ambig_discrete_M%d_N%d_T%d_Fc%d_vel%d_%s_alpha%.1f_q%d.mat",M,N,T,Fc,vel,shape,alpha,q);
         if isfile(filename)
             loaded_file = load(filename);
             ambig_t_range = loaded_file.ambig_t_range;
@@ -106,10 +106,10 @@ load_test = sys.R;
 if isempty(load_test)
     % Set up noise covariance matrix if not done already
     if shape ~= "rect"
-        if ~exist("Pre-rendered Lookup Tables\\OTFS Noise Covariance Matrices", 'dir')
-            mkdir("Pre-rendered Lookup Tables\\OTFS Noise Covariance Matrices")
+        if ~exist("Pre-rendered Lookup Tables\\OTFS-DD Noise Covariance Matrices", 'dir')
+            mkdir("Pre-rendered Lookup Tables\\OTFS-DD Noise Covariance Matrices")
         end
-        filename = sprintf("Pre-rendered Lookup Tables\\OTFS Noise Covariance Matrices\\Rzddt_T%d_N%d_M%d_q%d_%s_alpha%.1f.mat",T,N,M,q,shape,alpha);
+        filename = sprintf("Pre-rendered Lookup Tables\\OTFS-DD Noise Covariance Matrices\\Rzddt_T%d_N%d_M%d_q%d_%s_alpha%.1f.mat",T,N,M,q,shape,alpha);
         if isfile(filename)
             loaded_file = load(filename);
             R_half = loaded_file.R_half;
