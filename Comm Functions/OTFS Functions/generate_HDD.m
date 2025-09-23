@@ -1,4 +1,4 @@
-function H_DD = generate_HDD(obj,ambig_vals,ambig_t_range,ambig_f_range,L)
+function H_DD = generate_HDD(obj,ambig_vals,ambig_t_range,ambig_f_range,L,t_offset)
 
 % Import settings from object
 Fc = obj.Fc;
@@ -61,10 +61,10 @@ N = N_tsyms;
 M = M_sbcars;
 
 % Precompute n-grid and flattened quantities used for every block
-[n1_mat, n2_mat] = ndgrid(0:N-1, 0:N-1);   % n1 rows, n2 columns
-time_diff = (n1_mat - n2_mat) * T;        % N x N
-time_flat = time_diff(:);                 % (N^2) x 1
-n2_flat = n2_mat(:);                      % (N^2) x 1, needed for exp2
+[n1_mat, n2_mat] = ndgrid(0:N-1, 0:N-1);        % n1 rows, n2 columns
+time_diff = (n1_mat - n2_mat) * T + t_offset;   % N x N
+time_flat = time_diff(:);                       % (N^2) x 1
+n2_flat = n2_mat(:);                            % (N^2) x 1, needed for exp2
 
 % Row vectors of channel path params (1 x P) for broadcasting
 chn_g_row   = chn_g(:).';   % 1 x P

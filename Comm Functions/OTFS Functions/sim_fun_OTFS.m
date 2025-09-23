@@ -39,22 +39,6 @@ N0 = obj.N0;
 S = obj.S;
 syms_per_f = obj.syms_per_f;
 
-% Simulation loop
-num_BDFE_iters = 3;
-N_bit_per_slot = log2(M_ary) * syms_per_f;
-iters_vec = ones(new_frames,1);
-if receiver_name == "ML"
-    data_possible = generate_permn(M_ary,syms_per_f).';
-    X_possible = S(data_possible);
-    R_cross = pinv(RzDD);
-elseif receiver_name == "BDFE"
-    noise_var = N0;
-    [~, group0, group1] = modulator_OTFS(zeros(1, log2(M_ary)), M_ary, 0, 0);
-    bin_mat = dec2base(0:(M_ary-1), 2, log2(M_ary))-'0';
-    mod_sym_vec = modulator_OTFS(bin_mat.', M_ary);
-    iters_vec = num_BDFE_iters * iters_vec;
-end
-
 % Get CP variables
 tsym_jump = syms_per_f/N;
 tsym_jump_bin = 2*syms_per_f/N;
@@ -98,20 +82,36 @@ else
 end
 
 % Get noise covariance matrix
-if ~exist("Pre-rendered Lookup Tables\\OTFS Noise Covariance Matrices", 'dir')
-    mkdir("Pre-rendered Lookup Tables\\OTFS Noise Covariance Matrices")
-end
-filename = sprintf("Pre-rendered Lookup Tables\\OTFS Noise Covariance Matrices\\Rzddt_T%d_N%d_M%d_q%d_%s_alpha%.1f.mat",T,N,M,Q,shape,rolloff);
-if isfile(filename)
-    loaded_file = load(filename);
-    RzDD = loaded_file.RzDD;
-else
-    % Save to file
-    RzDD = obj.RzDD;
-    save(filename,"RzDD");
-end
+% if ~exist("Pre-rendered Lookup Tables\\OTFS Noise Covariance Matrices", 'dir')
+%     mkdir("Pre-rendered Lookup Tables\\OTFS Noise Covariance Matrices")
+% end
+% filename = sprintf("Pre-rendered Lookup Tables\\OTFS Noise Covariance Matrices\\Rzddt_T%d_N%d_M%d_q%d_%s_alpha%.1f.mat",T,N,M,Q,shape,rolloff);
+% if isfile(filename)
+%     loaded_file = load(filename);
+%     RzDD = loaded_file.RzDD;
+% else
+%     % Save to file
+%     RzDD = obj.RzDD;
+%     save(filename,"RzDD");
+% end
+RzDD = eye(syms_per_f);
 [U_z, D_z, ~] = svd(RzDD);
 R_z_half = (U_z * sqrt(D_z));
+
+% Receiver information
+num_BDFE_iters = 3;
+N_bit_per_slot = log2(M_ary) * syms_per_f;
+iters_vec = ones(new_frames,1);
+if receiver_name == "ML"
+    data_possible = generate_permn(M_ary,syms_per_f).';
+    X_possible = S(data_possible);
+    R_cross = pinv(RzDD);
+elseif receiver_name == "BDFE"
+    [~, group0, group1] = modulator_OTFS(zeros(1, log2(M_ary)), M_ary, 0, 0);
+    bin_mat = dec2base(0:(M_ary-1), 2, log2(M_ary))-'0';
+    mod_sym_vec = modulator_OTFS(bin_mat.', M_ary);
+    iters_vec = num_BDFE_iters * iters_vec;
+end
 
 % Simulation loop
 data_errors = 0;
@@ -137,7 +137,8 @@ for frame = 1:new_frames
     end
 
     % Generate channel
-    H_DD = generate_HDD(obj,ambig_vals,ambig_t_range,ambig_f_range,L1+L2);
+    t_offset = max_timing_offset * Ts;
+    H_DD = generate_HDD(obj,ambig_vals,ambig_t_range,ambig_f_range,L1+L2,t_offset);
 
     % Generate noise
     n = sqrt(N0 / 2) * (randn(syms_per_f,1) + 1j*randn(syms_per_f,1));
@@ -175,7 +176,7 @@ for frame = 1:new_frames
             iter_times = zeros(num_BDFE_iters,1);
             for k = 1:num_BDFE_iters
                 tStartRXiter = tic;
-                [x_hat, ll_bit_extrinsic] = bdfe(data_rx, ll_bit_apriori, fading, noise_var, group0, group1, bin_mat, mod_sym_vec);
+                [x_hat, ll_bit_extrinsic] = bdfe(data_rx, ll_bit_apriori, fading, N0, group0, group1, bin_mat, mod_sym_vec);
                 ll_bit_apriori = ll_bit_extrinsic;
                 iter_times = toc(tStartRXiter);
             end

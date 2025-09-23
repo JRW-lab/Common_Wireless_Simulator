@@ -22,64 +22,75 @@ function Apg = DD_cross_ambig(t,f,N,M,T,shape,alpha,Q,res)
 %
 % Coded by Jeremiah Rhys Wimer, 2/26/2025
 
-% Add redundancy for rectangular pulses
-if shape == "rect"
-    Q = 1;
-end
+if shape == ideal
 
-% Define parameters
-Ts = T / M;
-dt = Ts / res;
-t_range = 0:dt:Q*Ts;
-Ta = Q*Ts;
-
-% Define exponential summation term
-exp_sum = 0;
-for k = 0:N-1
-    exp_sum = exp_sum + exp(-1j*2*pi*f*k*T);
-end
-
-% Change time range and phase shift according to time
-if abs(t) <= Ta
-    ambig_bias = 1;
-
-    % % Add exponential component if CP
-    % if CP
-    %     exp_sum = exp_sum + exp(1j*2*pi*f*t);
-    % end
-elseif abs(t-T) <= Ta
-    t = t-T;
-    ambig_bias = exp(1j*2*pi*T*f);
-elseif abs(t+T) <= Ta
-    t = t+T;
-    ambig_bias = exp(-1j*2*pi*T*f);
-
-    % % Add exponential component if CP
-    % if CP
-    %     exp_sum = exp_sum + exp(1j*2*pi*f*t);
-    % end
-else
-    ambig_bias = 0;
-end
-
-% Generate integral for ambiguity function of elementary pulse a(t)
-if ambig_bias ~= 0
-
-    % Define TX/RX pulses
-    filter_1 = gen_pulse(t_range-t,shape,Ts,Q,alpha);
-    filter_2 = gen_pulse(t_range,shape,Ts,Q,alpha);
-
-    % Define integration function
-    norm_val = sqrt(sum(abs(filter_2).^2) * dt) * sqrt(N);
-    integral_vec = conj(filter_1 / norm_val) .* (filter_2 / norm_val) .* exp(-1j.*2.*pi.*(t_range-t).*f);
-    Aa = ambig_bias * sum(integral_vec.*dt,"all");
-
-    % Add ambiguity pulse to summation
-    Apg = exp_sum * Aa;
+    if t == 0 && f == 0
+        Apg = 1;
+    else
+        Apg = 0;
+    end
 
 else
 
-    % Set cross ambiguity to 0 if t is outside of range
-    Apg = 0;
+    % Add redundancy for rectangular pulses
+    if shape == "rect"
+        Q = 1;
+    end
 
+    % Define parameters
+    Ts = T / M;
+    dt = Ts / res;
+    t_range = 0:dt:Q*Ts;
+    Ta = Q*Ts;
+
+    % Define exponential summation term
+    exp_sum = 0;
+    for k = 0:N-1
+        exp_sum = exp_sum + exp(-1j*2*pi*f*k*T);
+    end
+
+    % Change time range and phase shift according to time
+    if abs(t) <= Ta
+        ambig_bias = 1;
+
+        % % Add exponential component if CP
+        % if CP
+        %     exp_sum = exp_sum + exp(1j*2*pi*f*t);
+        % end
+    elseif abs(t-T) <= Ta
+        t = t-T;
+        ambig_bias = exp(1j*2*pi*T*f);
+    elseif abs(t+T) <= Ta
+        t = t+T;
+        ambig_bias = exp(-1j*2*pi*T*f);
+
+        % % Add exponential component if CP
+        % if CP
+        %     exp_sum = exp_sum + exp(1j*2*pi*f*t);
+        % end
+    else
+        ambig_bias = 0;
+    end
+
+    % Generate integral for ambiguity function of elementary pulse a(t)
+    if ambig_bias ~= 0
+
+        % Define TX/RX pulses
+        filter_1 = gen_pulse(t_range-t,shape,Ts,Q,alpha);
+        filter_2 = gen_pulse(t_range,shape,Ts,Q,alpha);
+
+        % Define integration function
+        norm_val = sqrt(sum(abs(filter_2).^2) * dt) * sqrt(N);
+        integral_vec = conj(filter_1 / norm_val) .* (filter_2 / norm_val) .* exp(-1j.*2.*pi.*(t_range-t).*f);
+        Aa = ambig_bias * sum(integral_vec.*dt,"all");
+
+        % Add ambiguity pulse to summation
+        Apg = exp_sum * Aa;
+
+    else
+
+        % Set cross ambiguity to 0 if t is outside of range
+        Apg = 0;
+
+    end
 end

@@ -1,7 +1,7 @@
 function [ambig_vals,ambig_t_range,ambig_f_range] = gen_DD_cross_ambig_table(N,M,T,Fc,v,shape,alpha,Q,res)
 
 % Add redundancy for rectangular pulses
-if shape == "rect"
+if shape == "rect" || shape == "ideal"
     Q = 1;
 elseif shape == "sinc"
     alpha = 1;

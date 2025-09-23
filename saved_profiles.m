@@ -52,8 +52,8 @@ p.line_colors = {...
     "#000000"
     };
 p.vis_type = "figure";
-p.data_type = "BER";
-% p.data_type = "Thr";
+% p.data_type = "BER";
+p.data_type = "Thr";
 p.legend_loc = "southwest";
 p.ylim_vec = [1e-5 2e-1];
 all_profiles = [all_profiles p];

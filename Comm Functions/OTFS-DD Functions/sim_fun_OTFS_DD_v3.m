@@ -54,7 +54,7 @@ T = sys.T;
 Ts = sys.Ts;
 Lp = sys.Lp + 1;
 Ln = sys.Ln - 1;
-if shape == "rect"
+if shape == "rect" || shape == "ideal"
     q = 1;
     alpha = 1;
 elseif shape == "sinc"
