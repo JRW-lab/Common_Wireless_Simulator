@@ -1,20 +1,20 @@
-%% Start
+function sim_head(use_parellelization,frames_per_iter,priority,save_excel,create_database_tables,profile_sel,num_frames,delete_sel)
 % This file tests the BER/SER/FER for a few wireless communications
 % systems (supported: OFDM, OTFS, ODDM, TODDM), with settings specified in each
 % profile. Data is saved in a MySQL server so a password is required.
 %
 % Coded 6/9/2025, JRW
-clc; clear;
+clc;
 
 % Settings
-use_parellelization = 1;
-frames_per_iter = 10;
-save_data.priority = "mysql"; % local or mysql
-save_data.save_excel = false;
+save_data.priority = priority;
+save_data.save_excel = save_excel;
 save_data.save_mysql = true;
-create_database_tables = false;
 dbname     = 'comm_database';
 table_name = "results_TWC";
+save_data.excel_folder = 'Data';
+save_data.excel_name = table_name;
+save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".xlsx");
 
 % Set paths and data
 addpath(fullfile(pwd, 'Meta Functions'));
@@ -28,9 +28,6 @@ addpath(fullfile(pwd, 'Comm Functions'));
     addpath(fullfile(pwd, 'Comm Functions/TODDM Functions'));
     addpath(fullfile(pwd, 'Comm Functions/TX RX Functions'));
 javaaddpath('mysql-connector-j-8.4.0.jar');
-save_data.excel_folder = 'Data';
-save_data.excel_name = table_name;
-save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".xlsx");
 
 % Load profiles and select
 [all_profiles,profile_names] = saved_profiles();

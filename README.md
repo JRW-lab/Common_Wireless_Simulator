@@ -8,8 +8,8 @@ To use this code, you must run it in MATLAB 2024b or higher. The parallelization
 ## Instructions
 The code included here is lengthy and may be confusing so here is an overview of how it works:
 
-1. 'MAIN_simulator.m' includes the configurations and when run, the user selects from a series of options. 'saved_profiles.m' contains simulation profiles that can be selected on startup of the MAIN file.
-2. If a sufficient number of frames is not already simulated, 'sim_save.m' is run for a specific system with a set of defined parameters. (Setting number of frames to 0 skips simulations.)
+1. 'CommonWirelessSimulator.mlapp' alows the user to select from a series of options. 'saved_profiles.m' contains simulation profiles that can be selected on startup of the 'mlapp' file.
+2. If a sufficient number of frames is not already simulated, 'sim_save.m' is run for a specific system with a set of defined parameters. (A minimum of one simulated frame per simulation point is need to render figures.)
 3. Based on the 'system_name' in parameters, a simulation file is selected and additional frames are run.
 4. Steps 2 and 3 are repeated until all configurations have the sufficient number of frames for figure rendering.
 5. 'gen_table.m', 'gen_figure_v2.m' or 'gen_hex_layout.m' is run to generate a figure/table and save.
