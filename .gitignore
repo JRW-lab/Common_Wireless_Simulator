@@ -1,9 +1,10 @@
 # Ignore unneeded folders
 Figures/
 Final Results/
+Data/
 Legacy/
 Pre-rendered Lookup Tables/
 
 % Ignore specific files
 configurations.m
-test.m
+MAIN_simulator_v3.asv
