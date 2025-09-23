@@ -34,7 +34,7 @@ end
 
 % Display environment and architecture parameters
 clc;
-fprintf("+++ RUNNING PROFILE %d +++\n\n", evalin('base','profile_sel'));
+fprintf("+++ RUNNING PROFILE %d +++\n\n", d.profile_sel);
 fprintf("(%d/%d) Simulating %d of %d frames of %s%s system (%s receiver) \n", ...
     config_count, config_length, ...
     d.current_frames, d.num_frames, cp_string, d.system_name, d.receiver_name);

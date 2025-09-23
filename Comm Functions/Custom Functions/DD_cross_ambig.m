@@ -22,7 +22,7 @@ function Apg = DD_cross_ambig(t,f,N,M,T,shape,alpha,Q,res)
 %
 % Coded by Jeremiah Rhys Wimer, 2/26/2025
 
-if shape == ideal
+if shape == "ideal"
 
     if t == 0 && f == 0
         Apg = 1;

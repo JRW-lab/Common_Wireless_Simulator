@@ -30,8 +30,8 @@ addpath(fullfile(pwd, 'Comm Functions'));
 javaaddpath('mysql-connector-j-8.4.0.jar');
 
 % Load profiles and select
-[all_profiles,profile_names] = saved_profiles();
-[profile_sel,num_frames,delete_sel] = profile_select(all_profiles,profile_names,true);
+all_profiles = saved_profiles();
+% [profile_sel,num_frames,delete_sel] = profile_select(all_profiles,profile_names,true);
 
 % Set number of frames per iteration and render settings
 if num_frames <= 0
@@ -257,6 +257,7 @@ if ~skip_simulations
 
                         % Notify main thread of progress
                         progress_bar_data = parameters;
+                        progress_bar_data.profile_sel = profile_sel;
                         progress_bar_data.system_name = system_names{primvar_sel,sel};
                         progress_bar_data.num_iters = num_iters;
                         progress_bar_data.iter = iter;
