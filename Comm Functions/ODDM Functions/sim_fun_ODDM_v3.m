@@ -15,7 +15,7 @@ end
 % Define parameters
 res = 10;
 Es = 1;
-N_iters = 3;
+% N_iters = 3;
 syms_per_f = M*N;
 L1 = Q + 1;
 L2 = Q + 1 + floor(2510*10^(-9) / Ts);

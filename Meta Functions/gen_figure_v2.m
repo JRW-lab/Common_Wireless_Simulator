@@ -54,14 +54,11 @@ for primvar_sel = 1:size(hash_cell,1)
         sim_result = T(string(T.param_hash) == paramHash, :);
 
         % Select data to extract
-        metrics_loaded = jsondecode(sim_result.metrics{1});
-        results_val = metrics_loaded.(data_type);
-
-        % Add result to stack
-        if isempty(results_val)
+        try
+            metrics_loaded = jsondecode(sim_result.metrics{1});
+            results_mat(primvar_sel,sel) = metrics_loaded.(data_type);
+        catch
             results_mat(primvar_sel,sel) = NaN;
-        else
-            results_mat(primvar_sel,sel) = results_val;
         end
 
     end
@@ -83,7 +80,7 @@ end
 % Change x label depending on range parameter
 switch primary_var
     case "EbN0"
-        xlabel_name = "E_b/N_0";
+        xlabel_name = "E_b/N_0 (dB)";
     case "vel"
         xlabel_name = "Vehicular velocity (km/hr)";
     case "T"
@@ -93,6 +90,8 @@ switch primary_var
         xlabel_name = "Cutoff Frequency (Hz)";
     case "max_timing_offset"
         xlabel_name = "|\tau_e| (in T_s)";
+    case "N_iters"
+        xlabel_name = "Number of iterations";
     otherwise
         xlabel_name = primary_var;
 end

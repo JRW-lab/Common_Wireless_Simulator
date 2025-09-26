@@ -1,4 +1,4 @@
-function conn = mysql_login(dbname,~)
+function conn = mysql_login(dbname)
 
 % Parameters
 users = ["root","remote_user"];

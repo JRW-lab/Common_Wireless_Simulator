@@ -57,18 +57,19 @@ if run_flag
         case "OTFS-DD"
             metrics_add = sim_fun_OTFS_DD_v3(new_frames,parameters); % Dr. Jingxian Wu's design
         case "OFDM"
-            % if parameters.CP
             metrics_add = sim_fun_OFDM_v2(new_frames,parameters);
-            % else
-            %     error("CP-Less OFDM isn't supported yet!")
-            % end
     end
 
     % Write to database
     switch save_data.priority
         case "mysql"
             if save_data.save_mysql
-                mysql_write(conn,table_name,parameters,new_frames,metrics_add);
+                if isopen(conn)
+                    mysql_write(conn,table_name,parameters,new_frames,metrics_add);
+                else
+                    conn = mysql_login(dbname);
+                    mysql_write(conn,table_name,parameters,new_frames,metrics_add);
+                end
             end
             if save_data.save_excel
                 T = mysql_load(conn,table_name,"*");
@@ -81,7 +82,12 @@ if run_flag
                 local_write(excel_path,parameters,new_frames,metrics_add);
             end
             if save_data.save_mysql
-                mysql_write(conn,table_name,parameters,new_frames,metrics_add);
+                if isopen(conn)
+                    mysql_write(conn,table_name,parameters,new_frames,metrics_add);
+                else
+                    conn = mysql_login(dbname);
+                    mysql_write(conn,table_name,parameters,new_frames,metrics_add);
+                end
             end
     end
 

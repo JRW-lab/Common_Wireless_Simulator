@@ -19,14 +19,14 @@ save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".
 % Set paths and data
 addpath(fullfile(pwd, 'Meta Functions'));
 addpath(fullfile(pwd, 'Comm Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/Custom Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/Generation Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/OFDM Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/OTFS Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/OTFS-DD Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/ODDM Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/TODDM Functions'));
-    addpath(fullfile(pwd, 'Comm Functions/TX RX Functions'));
+addpath(fullfile(pwd, 'Comm Functions/Custom Functions'));
+addpath(fullfile(pwd, 'Comm Functions/Generation Functions'));
+addpath(fullfile(pwd, 'Comm Functions/OFDM Functions'));
+addpath(fullfile(pwd, 'Comm Functions/OTFS Functions'));
+addpath(fullfile(pwd, 'Comm Functions/OTFS-DD Functions'));
+addpath(fullfile(pwd, 'Comm Functions/ODDM Functions'));
+addpath(fullfile(pwd, 'Comm Functions/TODDM Functions'));
+addpath(fullfile(pwd, 'Comm Functions/TX RX Functions'));
 javaaddpath('mysql-connector-j-8.4.0.jar');
 
 % Load profiles and select
@@ -40,7 +40,6 @@ else
     skip_simulations = false;
 end
 render_figure = true;
-save_sel = true;
 
 % Extract data from profile
 p_sel = all_profiles{profile_sel};
@@ -48,11 +47,20 @@ fields_names = fieldnames(p_sel);
 for i = 1:numel(fields_names)
     eval([fields_names{i} ' = p_sel.(fields_names{i});']);
 end
+figure_data.ylim_vec = ylim_vec;
+figure_data.legend_loc = legend_loc;
+figure_data.data_type = data_type;
+figure_data.primary_var = primary_var;
+figure_data.primary_vals = primary_vals;
+figure_data.legend_vec = legend_vec;
+figure_data.line_styles = line_styles;
+figure_data.line_colors = line_colors;
+figure_data.save_sel = true;
 
 %% Database setup
 % Set up connection to MySQL server
 if save_data.save_mysql
-    conn_local = mysql_login(dbname);
+    conn = mysql_login(dbname);
     if create_database_tables
         % Set up MySQL commands
         sql_table = [
@@ -75,20 +83,20 @@ if save_data.save_mysql
 
         % Execute commands
         try
-            execute(conn_local, join(sql_table));
+            execute(conn, join(sql_table));
         catch
         end
         try
-            execute(conn_local, join(sql_flags));
+            execute(conn, join(sql_flags));
         catch
         end
         try
-            execute(conn_local, join(sql_main_flag));
+            execute(conn, join(sql_main_flag));
         catch
         end
     end
 else
-    conn_local = [];
+    conn = [];
 end
 
 % Ensure the folder exists
@@ -100,7 +108,7 @@ end
 switch save_data.priority
     case "mysql"
         if save_data.save_mysql
-            T = mysql_load(conn_local,table_name,"*");
+            T = mysql_load(conn,table_name,"*");
         elseif save_data.save_excel
             try
                 T = readtable(save_data.excel_path, 'TextType', 'string');
@@ -116,7 +124,7 @@ switch save_data.priority
                 T = table;
             end
         elseif save_data.save_mysql
-            T = mysql_load(conn_local,table_name,"*");
+            T = mysql_load(conn,table_name,"*");
         end
 end
 
@@ -155,7 +163,7 @@ for primvar_sel = 1:prvr_len
             parameters = rmfield(parameters, 'U');
             parameters = rmfield(parameters, 'shape');
             parameters = rmfield(parameters, 'alpha');
-            parameters = rmfield(parameters, 'Q'); 
+            parameters = rmfield(parameters, 'Q');
         end
         if exist("parameters.shape",'var')
             if parameters.shape ~= "rrc"
@@ -178,7 +186,7 @@ for primvar_sel = 1:prvr_len
                 case "mysql"
                     if save_data.save_mysql
                         delete_command = sprintf("DELETE FROM %s WHERE param_hash = '%s';",table_name,paramHash);
-                        exec(conn_local, delete_command);
+                        exec(conn, delete_command);
                     elseif save_data.save_excel
                         table_locs = 1 - (string(T.param_hash) == paramHash);
                         T = T(logical(table_locs),:);
@@ -189,7 +197,7 @@ for primvar_sel = 1:prvr_len
                         T = T(logical(table_locs),:);
                     elseif save_data.save_mysql
                         delete_command = sprintf("DELETE FROM %s WHERE param_hash = '%s';",table_name,paramHash);
-                        exec(conn_local, delete_command);
+                        exec(conn, delete_command);
                     end
             end
         else
@@ -212,10 +220,26 @@ if delete_sel && save_data.save_excel
 end
 
 %% Simulation loop
+
+% Figure render settings
+render_time = 60;
+
+% Render figure
+switch vis_type
+    case "table"
+        gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
+    case "figure"
+        gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
+    case "hexgrid"
+        gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
+end
+drawnow;
+
 % Start sim loop
 num_iters = ceil(num_frames / frames_per_iter);
 dq = parallel.pool.DataQueue;
 afterEach(dq, @updateProgressBar);
+tStart1 = tic;
 if ~skip_simulations
 
     % Set up connection to MySQL server
@@ -226,8 +250,6 @@ if ~skip_simulations
             parpool(poolCluster, maxCores);     % Start a parallel pool with all available workers
         end
         parfevalOnAll(@() javaaddpath('mysql-connector-j-8.4.0.jar'), 0);
-    else
-        conn_thrall = conn_local;
     end
 
     for iter = 1:num_iters
@@ -239,21 +261,22 @@ if ~skip_simulations
             current_frames = num_frames;
         end
 
-        if use_parellelization
+        % Continue to simulate if need more frames
+        if current_frames > prior_frames(primvar_sel,sel)
 
-            % Go through each settings profile
-            parfor primvar_sel = 1:prvr_len
-                for sel = 1:conf_len
+            if use_parellelization
 
-                    % Select parameters and hash
-                    parameters = params_cell{primvar_sel,sel};
-                    paramHash = hash_cell{primvar_sel,sel};
+                % Go through each settings profile
+                parfor primvar_sel = 1:prvr_len
 
-                    % Continue to simulate if need more frames
-                    if current_frames > prior_frames(primvar_sel,sel)
+                    % Set connection
+                    conn_thrall = mysql_login(dbname);
 
-                        % Set up connection to MySQL server
-                        conn_thrall = mysql_login(dbname);
+                    for sel = 1:conf_len
+
+                        % Select parameters and hash
+                        parameters = params_cell{primvar_sel,sel};
+                        paramHash = hash_cell{primvar_sel,sel};
 
                         % Notify main thread of progress
                         progress_bar_data = parameters;
@@ -272,27 +295,24 @@ if ~skip_simulations
                         % Simulate under current settings
                         sim_save(save_data,conn_thrall,table_name,current_frames,parameters,paramHash);
 
-                        % Close connection instance
-                        close(conn_thrall)
-
                     end
+
+                    % Close connection instance
+                    close(conn_thrall)
                 end
-            end
-        else
+            else
 
-            % Go through each settings profile
-            for primvar_sel = 1:prvr_len
-                for sel = 1:conf_len
+                % Go through each settings profile
+                for primvar_sel = 1:prvr_len
+                    for sel = 1:conf_len
 
-                    % Select parameters
-                    parameters = params_cell{primvar_sel,sel};
-                    paramHash = hash_cell{primvar_sel,sel};
-
-                    % Continue to simulate if need more frames
-                    if current_frames > prior_frames(primvar_sel,sel)
+                        % Select parameters
+                        parameters = params_cell{primvar_sel,sel};
+                        paramHash = hash_cell{primvar_sel,sel};
 
                         % Notify main thread of progress
                         progress_bar_data = parameters;
+                        progress_bar_data.profile_sel = profile_sel;
                         progress_bar_data.system_name = system_names{primvar_sel,sel};
                         progress_bar_data.num_iters = num_iters;
                         progress_bar_data.iter = iter;
@@ -305,41 +325,57 @@ if ~skip_simulations
                         send(dq, progress_bar_data);
 
                         % Simulate under current settings
-                        sim_save(save_data,conn_thrall,table_name,current_frames,parameters,paramHash);
+                        sim_save(save_data,conn,table_name,current_frames,parameters,paramHash);
+
+                        if toc(tStart1) > render_time
+                            tStart1 = tic;
+                            % Render figure
+                            switch vis_type
+                                case "table"
+                                    gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
+                                case "figure"
+                                    gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
+                                case "hexgrid"
+                                    gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
+                            end
+                            drawnow;
+                        end
 
                     end
                 end
+            end
+            if toc(tStart1) > render_time
+                tStart1 = tic;
+                % Render figure
+                switch vis_type
+                    case "table"
+                        gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
+                    case "figure"
+                        gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
+                    case "hexgrid"
+                        gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
+                end
+                drawnow;
             end
         end
     end
 end
 
 %% Figure generation
-% Set up figure data
-figure_data.ylim_vec = ylim_vec;
-figure_data.legend_loc = legend_loc;
-figure_data.data_type = data_type;
-figure_data.primary_var = primary_var;
-figure_data.primary_vals = primary_vals;
-figure_data.legend_vec = legend_vec;
-figure_data.line_styles = line_styles;
-figure_data.line_colors = line_colors;
-figure_data.save_sel = false;
 
 % Generate figure
 clc;
 fprintf("Displaying results for profile %d:\n",profile_sel)
 if render_figure
-    figure_data.save_sel = save_sel;
     switch vis_type
         case "table"
-            gen_table(save_data,conn_local,table_name,hash_cell,configs,figure_data);
+            gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
         case "figure"
-            gen_figure_v2(save_data,conn_local,table_name,hash_cell,configs,figure_data);
+            gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
         case "hexgrid"
-            gen_hex_layout(save_data,conn_local,table_name,default_parameters,configs,figure_data);
+            gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
     end
 end
 
 % Close connection with database
-close(conn_local);
+close(conn);

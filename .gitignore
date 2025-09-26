@@ -7,4 +7,4 @@ Pre-rendered Lookup Tables/
 
 % Ignore specific files
 configurations.m
-MAIN_simulator_v3.asv
+*.asv

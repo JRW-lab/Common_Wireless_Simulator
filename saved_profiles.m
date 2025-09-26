@@ -60,7 +60,7 @@ all_profiles = [all_profiles p];
 profile_names = [profile_names profile_name];
 
 %% PROFILE 1b
-profile_name = "System Throughput Comparison (OFDM/OTFS/ODDM)";
+profile_name = "System Throughput Comparison (ODDM)";
 p = struct;
 p.primary_var = "EbN0";
 p.primary_vals = 3:3:18;
@@ -82,29 +82,31 @@ p.default_parameters = struct(...
     'alpha', 0.4, ...
     'Q', 8);
 p.configs = {
-    struct('system_name','OFDM','M',64*16,'CP',false)
-    struct('system_name','OTFS','receiver_name','MMSE')
-    struct('system_name','ODDM')
-    struct('system_name','ODDM','CP',false)
+    struct('CP',false,'vel',120)
+    struct('CP',false,'vel',500)
+    struct('CP',true,'vel',120)
+    struct('CP',true,'vel',500)
     };
 p.delete_configs = [];
 p.legend_vec = {
-    "CP-Free OFDM"
-    "CP-OTFS"
-    "CP-ODDM"
-    "CP-Free ODDM (Proposed)"
+    "CP-Free ODDM, 120 km/hr"
+    "CP-Free ODDM, 500 km/hr"
+    "CP-ODDM, 120 km/hr"
+    "CP-ODDM, 500 km/hr"
     };
 p.line_styles = {
     "-x"
+    "--x"
     "-+"
+    "--+"
     "-v"
     "-square"
     };
 p.line_colors = {...
-    "#FF00FF"
+    "#FF0000"
     "#FF0000"
     "#0000FF"
-    "#000000"
+    "#0000FF"
     };
 p.vis_type = "figure";
 % p.data_type = "BER";
@@ -401,7 +403,7 @@ profile_names = [profile_names profile_name];
 profile_name = "Large Velocity Sweep";
 p = struct;
 p.primary_var = "vel";
-p.primary_vals = 100:100:2000;
+p.primary_vals = 0:500:30000;
 p.default_parameters = struct(...
     'system_name', "ODDM",...
     'CP', false,...
@@ -419,11 +421,15 @@ p.default_parameters = struct(...
     'alpha', 0.4, ...
     'Q', 8);
 p.configs = {
-    struct('EbN0',12)
+    struct('receiver_name',"MP")
+    struct('receiver_name',"MMSE")
+    struct('receiver_name',"CMC-MMSE")
     };
 p.delete_configs = [];
 p.legend_vec = {
-    "E_b/N_0=12 dB"
+    "MPA"
+    "MMSE"
+    "CMC-MMSE"
     };
 p.line_styles = {
     "-x"
@@ -438,6 +444,61 @@ p.line_colors = {...
 p.vis_type = "figure";
 p.data_type = "BER";
 p.legend_loc = "northwest";
-p.ylim_vec = [5e-6 1e-1];
+p.ylim_vec = [1e-3 1e-1];
+all_profiles = [all_profiles p];
+profile_names = [profile_names profile_name];
+
+%% PROFILE 6
+profile_name = "Max Iterations Sweep";
+p = struct;
+p.primary_var = "N_iters";
+p.primary_vals = 1:5;
+% p.primary_vals = 3:5;
+p.default_parameters = struct(...
+    'system_name', "ODDM",...
+    'CP', false,...
+    'receiver_name', "CMC-MMSE",...
+    'max_timing_offset', 0.0,...
+    'M_ary', 4, ...
+    'EbN0', 18, ...
+    'M', 64, ...
+    'N', 16, ...
+    'U', 1, ...
+    'T', 1 / 15000, ...
+    'Fc', 4e9, ...
+    'vel', 500, ...
+    'shape', "rrc", ...
+    'alpha', 0.4, ...
+    'Q', 8, ...
+    'N_iters', 3);
+p.configs = {
+    struct('N',16,'vel',120)
+    struct('N',16,'vel',500)
+    struct('N',64,'vel',120)
+    struct('N',64,'vel',500)
+    };
+p.delete_configs = [];
+p.legend_vec = {
+    "N=16, 120 km/hr"
+    "N=16, 500 km/hr"
+    "N=64, 120 km/hr"
+    "N=64, 500 km/hr"
+    };
+p.line_styles = {
+    "-x"
+    "--x"
+    "-+"
+    "--+"
+    };
+p.line_colors = {...
+    "#FF0000"
+    "#FF0000"
+    "#0000FF"
+    "#0000FF"
+    };
+p.vis_type = "figure";
+p.data_type = "BER";
+p.legend_loc = "northeast";
+p.ylim_vec = [1e-6 1e-1];
 all_profiles = [all_profiles p];
 profile_names = [profile_names profile_name];
