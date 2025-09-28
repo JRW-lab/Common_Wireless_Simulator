@@ -1,10 +1,21 @@
-function sim_head(use_parellelization,frames_per_iter,priority,save_excel,create_database_tables,profile_sel,num_frames,delete_sel)
+function sim_head(app_settings)
 % This file tests the BER/SER/FER for a few wireless communications
 % systems (supported: OFDM, OTFS, ODDM, TODDM), with settings specified in each
 % profile. Data is saved in a MySQL server so a password is required.
 %
 % Coded 6/9/2025, JRW
 clc;
+
+% Import settings from matlab app
+use_parellelization = app_settings.use_parellelization;
+frames_per_iter = app_settings.frames_per_iter;
+priority = app_settings.priority;
+save_excel = app_settings.save_excel;
+create_database_tables = app_settings.create_database_tables;
+profile_sel = app_settings.profile_sel;
+num_frames = app_settings.num_frames;
+delete_sel = app_settings.delete_sel;
+iteratively_render = app_settings.iteratively_render;
 
 % Settings
 save_data.priority = priority;
@@ -31,7 +42,6 @@ javaaddpath('mysql-connector-j-8.4.0.jar');
 
 % Load profiles and select
 all_profiles = saved_profiles();
-% [profile_sel,num_frames,delete_sel] = profile_select(all_profiles,profile_names,true);
 
 % Set number of frames per iteration and render settings
 if num_frames <= 0
@@ -225,21 +235,23 @@ end
 render_time = 60;
 
 % Render figure
-switch vis_type
-    case "table"
-        gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
-    case "figure"
-        gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
-    case "hexgrid"
-        gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
+if iteratively_render
+    switch vis_type
+        case "table"
+            gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
+        case "figure"
+            gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
+        case "hexgrid"
+            gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
+    end
+    drawnow;
+    tRender = tic;
 end
-drawnow;
 
 % Start sim loop
 num_iters = ceil(num_frames / frames_per_iter);
 dq = parallel.pool.DataQueue;
 afterEach(dq, @updateProgressBar);
-tStart1 = tic;
 if ~skip_simulations
 
     % Set up connection to MySQL server
@@ -327,35 +339,24 @@ if ~skip_simulations
                         % Simulate under current settings
                         sim_save(save_data,conn,table_name,current_frames,parameters,paramHash);
 
-                        if toc(tStart1) > render_time
-                            tStart1 = tic;
-                            % Render figure
-                            switch vis_type
-                                case "table"
-                                    gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
-                                case "figure"
-                                    gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
-                                case "hexgrid"
-                                    gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
-                            end
-                            drawnow;
-                        end
-
                     end
                 end
             end
-            if toc(tStart1) > render_time
-                tStart1 = tic;
-                % Render figure
-                switch vis_type
-                    case "table"
-                        gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
-                    case "figure"
-                        gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
-                    case "hexgrid"
-                        gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
+
+            if iteratively_render
+                if toc(tRender) > render_time
+                    tRender = tic;
+                    % Render figure
+                    switch vis_type
+                        case "table"
+                            gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
+                        case "figure"
+                            gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
+                        case "hexgrid"
+                            gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
+                    end
+                    drawnow;
                 end
-                drawnow;
             end
         end
     end

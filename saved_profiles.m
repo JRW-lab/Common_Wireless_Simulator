@@ -452,8 +452,9 @@ profile_names = [profile_names profile_name];
 profile_name = "Max Iterations Sweep";
 p = struct;
 p.primary_var = "N_iters";
-p.primary_vals = 1:5;
-% p.primary_vals = 3:5;
+% p.primary_vals = 1:6;
+p.primary_vals = 6;
+% p.primary_vals = 7:9;
 p.default_parameters = struct(...
     'system_name', "ODDM",...
     'CP', false,...
@@ -472,15 +473,15 @@ p.default_parameters = struct(...
     'Q', 8, ...
     'N_iters', 3);
 p.configs = {
-    struct('N',16,'vel',120)
-    struct('N',16,'vel',500)
+    % struct('N',16,'vel',120)
+    % struct('N',16,'vel',500)
     struct('N',64,'vel',120)
     struct('N',64,'vel',500)
     };
 p.delete_configs = [];
 p.legend_vec = {
-    "N=16, 120 km/hr"
-    "N=16, 500 km/hr"
+    % "N=16, 120 km/hr"
+    % "N=16, 500 km/hr"
     "N=64, 120 km/hr"
     "N=64, 500 km/hr"
     };

@@ -4,7 +4,12 @@ function sim_save(save_data,conn,table_name,current_frames,parameters,paramHash)
 switch save_data.priority
     case "mysql"
         if save_data.save_mysql
-            T = mysql_load(conn,table_name,"*");
+            try
+                T = mysql_load(conn,table_name,"*");
+            catch
+                conn = mysql_login(conn.DataSource);
+                T = mysql_load(conn,table_name,"*");
+            end
         elseif save_data.save_excel
             try
                 T = readtable(save_data.excel_path, 'TextType', 'string');
@@ -15,11 +20,13 @@ switch save_data.priority
     case "local"
         if save_data.save_excel
             try
-                T = readtable(save_data.excel_path, 'TextType', 'string');
+                T = mysql_load(conn,table_name,"*");
             catch
-                T = table;
+                conn = mysql_login(conn.DataSource);
+                T = mysql_load(conn,table_name,"*");
             end
         elseif save_data.save_mysql
+            conn = mysql_login(conn.DataSource);
             T = mysql_load(conn,table_name,"*");
         end
 end
@@ -64,10 +71,10 @@ if run_flag
     switch save_data.priority
         case "mysql"
             if save_data.save_mysql
-                if isopen(conn)
+                try
                     mysql_write(conn,table_name,parameters,new_frames,metrics_add);
-                else
-                    conn = mysql_login(dbname);
+                catch
+                    conn = mysql_login(conn.DataSource);
                     mysql_write(conn,table_name,parameters,new_frames,metrics_add);
                 end
             end
@@ -82,10 +89,10 @@ if run_flag
                 local_write(excel_path,parameters,new_frames,metrics_add);
             end
             if save_data.save_mysql
-                if isopen(conn)
+                try
                     mysql_write(conn,table_name,parameters,new_frames,metrics_add);
-                else
-                    conn = mysql_login(dbname);
+                catch
+                    conn = mysql_login(conn.DataSource);
                     mysql_write(conn,table_name,parameters,new_frames,metrics_add);
                 end
             end
