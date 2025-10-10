@@ -24,5 +24,3 @@ end
 if ~isopen(conn)
     error("Failure to form connection to MySQL database...")
 end
-
-end

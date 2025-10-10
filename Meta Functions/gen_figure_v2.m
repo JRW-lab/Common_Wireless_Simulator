@@ -57,6 +57,40 @@ for primvar_sel = 1:size(hash_cell,1)
         try
             metrics_loaded = jsondecode(sim_result.metrics{1});
             results_mat(primvar_sel,sel) = metrics_loaded.(data_type);
+
+            % Rescale throughput - CHANGE TO SOURCE IN UPDATE
+            % if jsondecode(sim_result.parameters{1}).CP && data_type == "Thr"
+            %     M = jsondecode(sim_result.parameters{1}).M;
+            %     N = jsondecode(sim_result.parameters{1}).N;
+            %     Q = jsondecode(sim_result.parameters{1}).Q;
+            %     T_temp = jsondecode(sim_result.parameters{1}).T;
+            % 
+            %     Ts = T_temp / M;
+            %     L1 = Q + 1;
+            %     L2 = Q + 1 + floor(2510*10^(-9) / Ts);
+            %     results_mat(primvar_sel,sel) = results_mat(primvar_sel,sel) * (M*N) / ((M+L1+L2)*N);
+            % end
+            if data_type == "Thr"
+                M = jsondecode(sim_result.parameters{1}).M;
+                try
+                    N = jsondecode(sim_result.parameters{1}).N;
+                catch
+                    N = 1;
+                end
+                try
+                    Q = jsondecode(sim_result.parameters{1}).Q;
+                catch
+                    Q = 1;
+                end
+                T_temp = jsondecode(sim_result.parameters{1}).T;
+
+                Ts = T_temp / M;
+                L1 = Q + 1;
+                L2 = Q + 1 + floor(2510*10^(-9) / Ts);
+
+                results_mat(primvar_sel,sel) = 2 * (1 - metrics_loaded.FER) * (M*N) / ((M+L1+L2)*N);
+            end
+
         catch
             results_mat(primvar_sel,sel) = NaN;
         end
@@ -135,7 +169,7 @@ xticks(primary_vals)
 legend(legend_vec,Location=loc);
 set(gca, 'FontSize', font_val);
 set(gca, 'Box', 'on');
-% set(gca, 'LineWidth', line_val);
+set(gca, 'LineWidth', line_val);
 
 % Save figure
 timestamp = datetime('now', 'Format', 'yyyyMMdd_HHmmss');

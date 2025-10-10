@@ -53,7 +53,6 @@ p.line_colors = {...
     };
 p.vis_type = "figure";
 p.data_type = "BER";
-% p.data_type = "Thr";
 p.legend_loc = "southwest";
 p.ylim_vec = [1e-5 2e-1];
 all_profiles = [all_profiles p];
@@ -82,34 +81,35 @@ p.default_parameters = struct(...
     'alpha', 0.4, ...
     'Q', 8);
 p.configs = {
-    struct('CP',false,'vel',120)
-    struct('CP',false,'vel',500)
-    struct('CP',true,'vel',120)
-    struct('CP',true,'vel',500)
+    % struct('CP',false,'vel',120)
+    % struct('CP',false,'vel',500)
+    % struct('CP',true,'vel',120)
+    % struct('CP',true,'vel',500)
+    struct('CP',false)
+    struct('CP',true)
     };
 p.delete_configs = [];
 p.legend_vec = {
-    "CP-Free ODDM, 120 km/hr"
-    "CP-Free ODDM, 500 km/hr"
-    "CP-ODDM, 120 km/hr"
-    "CP-ODDM, 500 km/hr"
+    % "CP-Free ODDM, 120 km/hr"
+    % "CP-Free ODDM, 500 km/hr"
+    % "CP-ODDM, 120 km/hr"
+    % "CP-ODDM, 500 km/hr"
+    "CP-Free ODDM"
+    "CP-ODDM"
     };
 p.line_styles = {
     "-x"
-    "--x"
+    % "--x"
     "-+"
     "--+"
-    "-v"
-    "-square"
     };
 p.line_colors = {...
     "#FF0000"
-    "#FF0000"
+    % "#FF0000"
     "#0000FF"
     "#0000FF"
     };
 p.vis_type = "figure";
-% p.data_type = "BER";
 p.data_type = "Thr";
 p.legend_loc = "southwest";
 p.ylim_vec = [1e-5 2e-1];
@@ -452,9 +452,7 @@ profile_names = [profile_names profile_name];
 profile_name = "Max Iterations Sweep";
 p = struct;
 p.primary_var = "N_iters";
-% p.primary_vals = 1:6;
-p.primary_vals = 6;
-% p.primary_vals = 7:9;
+p.primary_vals = 1:6;
 p.default_parameters = struct(...
     'system_name', "ODDM",...
     'CP', false,...
@@ -473,15 +471,15 @@ p.default_parameters = struct(...
     'Q', 8, ...
     'N_iters', 3);
 p.configs = {
-    % struct('N',16,'vel',120)
-    % struct('N',16,'vel',500)
+    struct('N',16,'vel',120)
+    struct('N',16,'vel',500)
     struct('N',64,'vel',120)
     struct('N',64,'vel',500)
     };
 p.delete_configs = [];
 p.legend_vec = {
-    % "N=16, 120 km/hr"
-    % "N=16, 500 km/hr"
+    "N=16, 120 km/hr"
+    "N=16, 500 km/hr"
     "N=64, 120 km/hr"
     "N=64, 500 km/hr"
     };

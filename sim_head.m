@@ -11,6 +11,7 @@ use_parellelization = app_settings.use_parellelization;
 frames_per_iter = app_settings.frames_per_iter;
 priority = app_settings.priority;
 save_excel = app_settings.save_excel;
+save_mysql = app_settings.save_mysql;
 create_database_tables = app_settings.create_database_tables;
 profile_sel = app_settings.profile_sel;
 num_frames = app_settings.num_frames;
@@ -20,7 +21,7 @@ iteratively_render = app_settings.iteratively_render;
 % Settings
 save_data.priority = priority;
 save_data.save_excel = save_excel;
-save_data.save_mysql = true;
+save_data.save_mysql = save_mysql;
 dbname     = 'comm_database';
 table_name = "results_TWC";
 save_data.excel_folder = 'Data';
@@ -273,18 +274,19 @@ if ~skip_simulations
             current_frames = num_frames;
         end
 
-        % Continue to simulate if need more frames
-        if current_frames > prior_frames(primvar_sel,sel)
 
-            if use_parellelization
+        if use_parellelization
 
-                % Go through each settings profile
-                parfor primvar_sel = 1:prvr_len
+            % Go through each settings profile
+            parfor primvar_sel = 1:prvr_len
 
-                    % Set connection
-                    conn_thrall = mysql_login(dbname);
+                % Set connection
+                conn_thrall = mysql_login(dbname);
 
-                    for sel = 1:conf_len
+                for sel = 1:conf_len
+
+                    % Continue to simulate if need more frames
+                    if current_frames > prior_frames(primvar_sel,sel)
 
                         % Select parameters and hash
                         parameters = params_cell{primvar_sel,sel};
@@ -308,15 +310,19 @@ if ~skip_simulations
                         sim_save(save_data,conn_thrall,table_name,current_frames,parameters,paramHash);
 
                     end
-
-                    % Close connection instance
-                    close(conn_thrall)
                 end
-            else
 
-                % Go through each settings profile
-                for primvar_sel = 1:prvr_len
-                    for sel = 1:conf_len
+                % Close connection instance
+                close(conn_thrall)
+            end
+        else
+
+            % Go through each settings profile
+            for primvar_sel = 1:prvr_len
+                for sel = 1:conf_len
+
+                    % Continue to simulate if need more frames
+                    if current_frames > prior_frames(primvar_sel,sel)
 
                         % Select parameters
                         parameters = params_cell{primvar_sel,sel};
