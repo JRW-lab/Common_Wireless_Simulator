@@ -29,27 +29,21 @@ if shape == "ideal"
 else
     % Define resolution of "integration"
     dt = Ts / res;
+    t_range = 0:dt:q*Ts;
 
     % Define TX/RX filters
     switch shape
         case "rect"
-            t_range = 0:dt:Ts;
             filter_1 = gen_rect_filter(t_range-t,Ts,q/2);
             filter_2 = gen_rect_filter(t_range,Ts,q/2);
         case "sinc"
-            t_range = -q*Ts:dt:q*Ts;
-            % filter_1 = sinc_trunc((t_range-t - q*Ts/2),Ts,q/2);
-            % filter_2 = sinc_trunc((t_range - q*Ts/2),Ts,q/2);
-            filter_1 = sinc_trunc(t_range-t,Ts,q);
-            filter_2 = sinc_trunc(t_range,Ts,q);
+            filter_1 = sinc_trunc((t_range-t - q*Ts/2),Ts,q/2);
+            filter_2 = sinc_trunc((t_range - q*Ts/2),Ts,q/2);
         case "rrc"
-            t_range = -q*Ts:dt:q*Ts;
-            % filter_1 = RRCt_trunc((t_range-t - q*Ts/2),alpha,Ts,q/2);
-            % filter_2 = RRCt_trunc((t_range - q*Ts/2),alpha,Ts,q/2);
-            filter_1 = RRCt_trunc(t_range-t,alpha,Ts,q);
-            filter_2 = RRCt_trunc(t_range,alpha,Ts,q);
+            filter_1 = RRCt_trunc((t_range-t - q*Ts/2),alpha,Ts,q/2);
+            filter_2 = RRCt_trunc((t_range - q*Ts/2),alpha,Ts,q/2);
         otherwise
-            error("Unsupported shape!")
+            error("Unsupported pulse shape!")
     end
 
     % Defind integration function

@@ -7,12 +7,8 @@ for i = 1:numel(fields)
 end
 
 % Change settings if CP
-if CP
-    Ts = T / M;
-    L1 = Q + 1;
-    L2 = Q + 1 + floor(2510*10^(-9) / Ts);
-    M_cp = L1 + L2;
-    M = M + M_cp;
+if ~CP
+    error("This method was derived with CP implicitly encoded in the channel structure.")
 end
 
 % Input conversion
@@ -29,7 +25,7 @@ sys.v_vel = vel;
 sys.rolloff = alpha;
 
 % Equalizer settings
-N_iters = 3;
+N_iters = 8;
 ambig_res = 101;
 % rng('default');
 
@@ -163,15 +159,7 @@ for frame = 1:new_frames
     TX_sym = Gamma_MN' * TX_2;
     x_tilde = Gamma_MN' * x_DD;
 
-    % Truncate data if using CP
-    if CP
-        TX_bit = TX_bit(N*M_cp+1:end,:);
-        TX_sym = TX_sym(N*M_cp+1:end);
-        x_tilde(1:N*M_cp) = x_tilde(((M-M_cp)*N+1):end);
-    end
-
     % Generate channel
-    % t_offset = 2 * max_timing_offset * Ts * (rand - 0.5);
     t_offset = max_timing_offset * Ts;
     [chn_g,chn_tau,chn_v] = channel_generation(Fc,vel);
     if shape == "rect" % rectangular ambiguity is closed form
@@ -214,11 +202,6 @@ for frame = 1:new_frames
             error("Unsupported receiver for the simulated system!")
     end
 
-    % Truncate received vector if CP
-    if CP
-        x_hat = x_hat(N*M_cp+1:end,:);
-    end
-
     % Hard detection for final x_hat
     dist = abs(x_hat.' - S).^2;
     [~,min_index] = min(dist);
@@ -243,11 +226,6 @@ end
 % Get parameters for throughput
 frame_duration = N * T;
 bandwidth_hz = M / T;
-
-% Adjust symbols per frame for calculations if using CP
-if CP
-    syms_per_f = (M-M_cp)*N;
-end
 
 % Calculate BER, SER and FER
 metrics.BER = sum(bit_errors,"all") / (new_frames*syms_per_f*log2(M_ary));

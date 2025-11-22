@@ -8,7 +8,7 @@ end
 
 % Cause error if settings are inconsistent with theory
 Ts = T / M;
-if 2*Q + floor(2510*10^(-9) / Ts) >= M
+if 2*Q + floor(2510*10^(-9) / Ts) >= M %#ok<NODEF>
     error("Settings can not satisfy the ambiguity assumption.")
 end
 

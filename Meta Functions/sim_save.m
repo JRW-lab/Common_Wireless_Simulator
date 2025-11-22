@@ -65,6 +65,8 @@ if run_flag
             metrics_add = sim_fun_OTFS_DD_v3(new_frames,parameters); % Dr. Jingxian Wu's design
         case "OFDM"
             metrics_add = sim_fun_OFDM_v2(new_frames,parameters);
+        otherwise
+            error("Invalid system selected.")
     end
 
     % Write to database

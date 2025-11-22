@@ -7,12 +7,12 @@ function sim_head(app_settings)
 clc;
 
 % Import settings from matlab app
+table_name = app_settings.table_name;
 use_parellelization = app_settings.use_parellelization;
 frames_per_iter = app_settings.frames_per_iter;
 priority = app_settings.priority;
 save_excel = app_settings.save_excel;
 save_mysql = app_settings.save_mysql;
-create_database_tables = app_settings.create_database_tables;
 profile_sel = app_settings.profile_sel;
 num_frames = app_settings.num_frames;
 delete_sel = app_settings.delete_sel;
@@ -23,7 +23,6 @@ save_data.priority = priority;
 save_data.save_excel = save_excel;
 save_data.save_mysql = save_mysql;
 dbname     = 'comm_database';
-table_name = "results_TWC";
 save_data.excel_folder = 'Data';
 save_data.excel_name = table_name;
 save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".xlsx");
@@ -72,7 +71,9 @@ figure_data.save_sel = true;
 % Set up connection to MySQL server
 if save_data.save_mysql
     conn = mysql_login(dbname);
-    if create_database_tables
+
+    % Create database if it doesn't exist
+    if isempty(sqlfind(conn, table_name))
         % Set up MySQL commands
         sql_table = [
             "CREATE TABLE " + table_name + " (" ...
@@ -141,7 +142,7 @@ end
 
 %% Make parameters for each sim point
 prvr_len = length(primary_vals);
-conf_len = length(configs);
+conf_len = length(configs); %#ok<USENS>
 system_names = cell(prvr_len,conf_len);
 params_cell = cell(prvr_len,conf_len);
 hash_cell = cell(prvr_len,conf_len);
@@ -253,6 +254,7 @@ end
 num_iters = ceil(num_frames / frames_per_iter);
 dq = parallel.pool.DataQueue;
 afterEach(dq, @updateProgressBar);
+min_frames = min(prior_frames,[],"all");
 if ~skip_simulations
 
     % Set up connection to MySQL server
@@ -274,94 +276,104 @@ if ~skip_simulations
             current_frames = num_frames;
         end
 
+        if min_frames < current_frames
+            if use_parellelization
 
-        if use_parellelization
+                % Go through each settings profile
+                parfor primvar_sel = 1:prvr_len
+                    for sel = 1:conf_len
 
-            % Go through each settings profile
-            parfor primvar_sel = 1:prvr_len
+                        % Continue to simulate if need more frames
+                        if current_frames > prior_frames(primvar_sel,sel)
 
-                % Set connection
-                conn_thrall = mysql_login(dbname);
+                            % Select parameters and hash
+                            parameters = params_cell{primvar_sel,sel};
+                            paramHash = hash_cell{primvar_sel,sel};
 
-                for sel = 1:conf_len
+                            % Notify main thread of progress
+                            progress_bar_data = parameters;
+                            progress_bar_data.profile_sel = profile_sel;
+                            progress_bar_data.system_name = system_names{primvar_sel,sel};
+                            progress_bar_data.num_iters = num_iters;
+                            progress_bar_data.iter = iter;
+                            progress_bar_data.primvar_sel = primvar_sel;
+                            progress_bar_data.sel = sel;
+                            progress_bar_data.prvr_len = prvr_len;
+                            progress_bar_data.conf_len = conf_len;
+                            progress_bar_data.current_frames = current_frames;
+                            progress_bar_data.num_frames = num_frames;
+                            send(dq, progress_bar_data);
 
-                    % Continue to simulate if need more frames
-                    if current_frames > prior_frames(primvar_sel,sel)
+                            % Simulate under current settings
+                            sim_save(save_data,conn,table_name,current_frames,parameters,paramHash);
 
-                        % Select parameters and hash
-                        parameters = params_cell{primvar_sel,sel};
-                        paramHash = hash_cell{primvar_sel,sel};
-
-                        % Notify main thread of progress
-                        progress_bar_data = parameters;
-                        progress_bar_data.profile_sel = profile_sel;
-                        progress_bar_data.system_name = system_names{primvar_sel,sel};
-                        progress_bar_data.num_iters = num_iters;
-                        progress_bar_data.iter = iter;
-                        progress_bar_data.primvar_sel = primvar_sel;
-                        progress_bar_data.sel = sel;
-                        progress_bar_data.prvr_len = prvr_len;
-                        progress_bar_data.conf_len = conf_len;
-                        progress_bar_data.current_frames = current_frames;
-                        progress_bar_data.num_frames = num_frames;
-                        send(dq, progress_bar_data);
-
-                        % Simulate under current settings
-                        sim_save(save_data,conn_thrall,table_name,current_frames,parameters,paramHash);
-
+                        end
                     end
                 end
 
-                % Close connection instance
-                close(conn_thrall)
-            end
-        else
-
-            % Go through each settings profile
-            for primvar_sel = 1:prvr_len
-                for sel = 1:conf_len
-
-                    % Continue to simulate if need more frames
-                    if current_frames > prior_frames(primvar_sel,sel)
-
-                        % Select parameters
-                        parameters = params_cell{primvar_sel,sel};
-                        paramHash = hash_cell{primvar_sel,sel};
-
-                        % Notify main thread of progress
-                        progress_bar_data = parameters;
-                        progress_bar_data.profile_sel = profile_sel;
-                        progress_bar_data.system_name = system_names{primvar_sel,sel};
-                        progress_bar_data.num_iters = num_iters;
-                        progress_bar_data.iter = iter;
-                        progress_bar_data.primvar_sel = primvar_sel;
-                        progress_bar_data.sel = sel;
-                        progress_bar_data.prvr_len = prvr_len;
-                        progress_bar_data.conf_len = conf_len;
-                        progress_bar_data.current_frames = current_frames;
-                        progress_bar_data.num_frames = num_frames;
-                        send(dq, progress_bar_data);
-
-                        % Simulate under current settings
-                        sim_save(save_data,conn,table_name,current_frames,parameters,paramHash);
-
+                if iteratively_render
+                    if toc(tRender) > render_time
+                        tRender = tic;
+                        % Render figure
+                        switch vis_type
+                            case "table"
+                                gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
+                            case "figure"
+                                gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
+                            case "hexgrid"
+                                gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
+                        end
+                        drawnow;
                     end
                 end
-            end
+            else
 
-            if iteratively_render
-                if toc(tRender) > render_time
-                    tRender = tic;
-                    % Render figure
-                    switch vis_type
-                        case "table"
-                            gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
-                        case "figure"
-                            gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
-                        case "hexgrid"
-                            gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
+                % Go through each settings profile
+                for primvar_sel = 1:prvr_len
+                    for sel = 1:conf_len
+
+                        % Continue to simulate if need more frames
+                        if current_frames > prior_frames(primvar_sel,sel)
+
+                            % Select parameters
+                            parameters = params_cell{primvar_sel,sel};
+                            paramHash = hash_cell{primvar_sel,sel};
+
+                            % Notify main thread of progress
+                            progress_bar_data = parameters;
+                            progress_bar_data.profile_sel = profile_sel;
+                            progress_bar_data.system_name = system_names{primvar_sel,sel};
+                            progress_bar_data.num_iters = num_iters;
+                            progress_bar_data.iter = iter;
+                            progress_bar_data.primvar_sel = primvar_sel;
+                            progress_bar_data.sel = sel;
+                            progress_bar_data.prvr_len = prvr_len;
+                            progress_bar_data.conf_len = conf_len;
+                            progress_bar_data.current_frames = current_frames;
+                            progress_bar_data.num_frames = num_frames;
+                            send(dq, progress_bar_data);
+
+                            % Simulate under current settings
+                            sim_save(save_data,conn,table_name,current_frames,parameters,paramHash);
+
+                        end
                     end
-                    drawnow;
+                end
+
+                if iteratively_render
+                    if toc(tRender) > render_time
+                        tRender = tic;
+                        % Render figure
+                        switch vis_type
+                            case "table"
+                                gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
+                            case "figure"
+                                gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
+                            case "hexgrid"
+                                gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
+                        end
+                        drawnow;
+                    end
                 end
             end
         end
