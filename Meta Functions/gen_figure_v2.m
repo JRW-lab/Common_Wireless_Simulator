@@ -11,7 +11,12 @@ font_val = 16;
 switch save_data.priority
     case "mysql"
         if save_data.save_mysql
-            T = mysql_load(conn,table_name,"*");
+            try
+                T = mysql_load(conn,table_name,"*");
+            catch
+                conn = mysql_login(conn.DataSource);
+                T = mysql_load(conn,table_name,"*");
+            end
         elseif save_data.save_excel
             try
                 T = readtable(save_data.excel_path, 'TextType', 'string');
@@ -27,7 +32,12 @@ switch save_data.priority
                 T = table;
             end
         elseif save_data.save_mysql
-            T = mysql_load(conn,table_name,"*");
+            try
+                T = mysql_load(conn,table_name,"*");
+            catch
+                conn = mysql_login(conn.DataSource);
+                T = mysql_load(conn,table_name,"*");
+            end
         end
 end
 

@@ -38,7 +38,7 @@ addpath(fullfile(pwd, 'Comm Functions/OTFS-DD Functions'));
 addpath(fullfile(pwd, 'Comm Functions/ODDM Functions'));
 addpath(fullfile(pwd, 'Comm Functions/TODDM Functions'));
 addpath(fullfile(pwd, 'Comm Functions/TX RX Functions'));
-javaaddpath('mysql-connector-j-8.4.0.jar');
+addMysqlJarOnce();
 
 % Load profiles and select
 all_profiles = saved_profiles();
@@ -282,8 +282,6 @@ if ~skip_simulations
                 % Go through each settings profile
                 parfor primvar_sel = 1:prvr_len
                     for sel = 1:conf_len
-
-                        % Continue to simulate if need more frames
                         if current_frames > prior_frames(primvar_sel,sel)
 
                             % Select parameters and hash
@@ -306,24 +304,9 @@ if ~skip_simulations
 
                             % Simulate under current settings
                             sim_save(save_data,conn,table_name,current_frames,parameters,paramHash);
+                            prior_frames(primvar_sel,sel) = prior_frames(primvar_sel,sel) + frames_per_iter;
 
                         end
-                    end
-                end
-
-                if iteratively_render
-                    if toc(tRender) > render_time
-                        tRender = tic;
-                        % Render figure
-                        switch vis_type
-                            case "table"
-                                gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
-                            case "figure"
-                                gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
-                            case "hexgrid"
-                                gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
-                        end
-                        drawnow;
                     end
                 end
             else
@@ -331,8 +314,6 @@ if ~skip_simulations
                 % Go through each settings profile
                 for primvar_sel = 1:prvr_len
                     for sel = 1:conf_len
-
-                        % Continue to simulate if need more frames
                         if current_frames > prior_frames(primvar_sel,sel)
 
                             % Select parameters
@@ -355,27 +336,44 @@ if ~skip_simulations
 
                             % Simulate under current settings
                             sim_save(save_data,conn,table_name,current_frames,parameters,paramHash);
+                            prior_frames(primvar_sel,sel) = prior_frames(primvar_sel,sel) + frames_per_iter;
 
                         end
-                    end
-                end
-
-                if iteratively_render
-                    if toc(tRender) > render_time
-                        tRender = tic;
-                        % Render figure
-                        switch vis_type
-                            case "table"
-                                gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
-                            case "figure"
-                                gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
-                            case "hexgrid"
-                                gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
-                        end
-                        drawnow;
                     end
                 end
             end
+
+            if iteratively_render
+                if toc(tRender) > render_time
+                    tRender = tic;
+                    % Render figure
+                    switch vis_type
+                        case "table"
+                            gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
+                        case "figure"
+                            gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
+                        case "hexgrid"
+                            gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
+                    end
+                    drawnow;
+                end
+            end
+
+            % Update number of frames
+            try
+                T = mysql_load(conn,table_name,"*");
+            catch
+                conn = mysql_login(conn.DataSource);
+                T = mysql_load(conn,table_name,"*");
+            end
+            for primvar_sel = 1:prvr_len
+                for sel = 1:conf_len
+                    paramHash = hash_cell{primvar_sel,sel};
+                    sim_result = T(string(T.param_hash) == paramHash, :);
+                    prior_frames(primvar_sel,sel) = sim_result.frames_simulated;
+                end
+            end
+
         end
     end
 end

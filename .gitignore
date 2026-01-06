@@ -6,5 +6,6 @@ Legacy/
 Pre-rendered Lookup Tables/
 
 % Ignore specific files
+test.m
 configurations.m
 *.asv
