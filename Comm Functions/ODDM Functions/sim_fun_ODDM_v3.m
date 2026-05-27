@@ -21,11 +21,13 @@ L1 = Q + 1;
 L2 = Q + 1 + floor(2510*10^(-9) / Ts);
 if CP
     M_cp = L1 + L2;
+    Eb = (Es / log2(M_ary)) * (M+M_cp) / M;
+    N0 = Eb / (10^(EbN0 / 10));
 else
     M_cp = 0;
+    Eb = (Es / log2(M_ary)) * (M+M_cp) / M;
+    N0 = Eb / (10^(EbN0 / 10)) * ((N+2)/N);
 end
-Eb = (Es / log2(M_ary)) * (M+M_cp) / M;
-N0 = Eb / (10^(EbN0 / 10)) * ((N+2)/N);
 
 % Add redundancy for rectangular and sinc pulses
 if shape == "rect"
