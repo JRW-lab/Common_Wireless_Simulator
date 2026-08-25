@@ -99,14 +99,10 @@ p.legend_vec = {
     };
 p.line_styles = {
     "-x"
-    % "--x"
     "-+"
-    "--+"
     };
 p.line_colors = {...
     "#FF0000"
-    % "#FF0000"
-    "#0000FF"
     "#0000FF"
     };
 p.vis_type = "figure";

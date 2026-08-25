@@ -28,6 +28,7 @@ save_data.excel_name = table_name;
 save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".xlsx");
 
 % Set paths and data
+addpath(fullfile(pwd, 'Common-Wireless-Infrastructure', 'Meta Functions'));
 addpath(fullfile(pwd, 'Meta Functions'));
 addpath(fullfile(pwd, 'Comm Functions'));
 addpath(fullfile(pwd, 'Comm Functions/Custom Functions'));
@@ -242,7 +243,7 @@ if iteratively_render
         case "table"
             gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
         case "figure"
-            gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
+            gen_figure(save_data,conn,table_name,hash_cell,configs,figure_data);
         case "hexgrid"
             gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
     end
@@ -351,7 +352,7 @@ if ~skip_simulations
                         case "table"
                             gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
                         case "figure"
-                            gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
+                            gen_figure(save_data,conn,table_name,hash_cell,configs,figure_data);
                         case "hexgrid"
                             gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
                     end
@@ -388,7 +389,7 @@ if render_figure
         case "table"
             gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
         case "figure"
-            gen_figure_v2(save_data,conn,table_name,hash_cell,configs,figure_data);
+            gen_figure(save_data,conn,table_name,hash_cell,configs,figure_data);
         case "hexgrid"
             gen_hex_layout(save_data,conn,table_name,default_parameters,configs,figure_data);
     end
