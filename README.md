@@ -1,21 +1,96 @@
-# Common Wireless Simulator (MATLAB with SQL compatibility)
-A MATLAB-based simulator for calculating error rates in OFDM, OTFS, and ODDM.
+# Common Wireless Simulator
+
+A MATLAB-based simulator for calculating error rates in OFDM, OTFS, ODDM, and TODDM.
 Results can be stored either locally in an Excel file or in an SQL database.
 
-## Introduction
-To use this code, you must run it in MATLAB 2024b or higher. The parallelization toolbox is used in the current implementation but can be turned "off" in settings. Additionally, the database toolbox and several others are required, both to simulate and to upload simulation results to MySQL. Commands are included in the code to automatially create the needed tables for MySQL, so long as the correct database is selected.
+## Requirements
 
-## Instructions
-The code included here is lengthy and may be confusing so here is an overview of how it works:
+- MATLAB R2024b or later
+- Parallel Computing Toolbox (optional, can be disabled in settings)
+- Database Toolbox (for MySQL storage)
+- Communications Toolbox, Signal Processing Toolbox
 
-1. 'CommonWirelessSimulator.mlapp' alows the user to select from a series of options. 'saved_profiles.m' contains simulation profiles that can be selected on startup of the 'mlapp' file.
-2. If a sufficient number of frames is not already simulated, 'sim_save.m' is run for a specific system with a set of defined parameters. (A minimum of one simulated frame per simulation point is need to render figures.)
-3. Based on the 'system_name' in parameters, a simulation file is selected and additional frames are run.
-4. Steps 2 and 3 are repeated until all configurations have the sufficient number of frames for figure rendering.
-5. 'gen_table.m', 'gen_figure_v2.m' or 'gen_hex_layout.m' is run to generate a figure/table and save.
+## Getting Started
+
+Clone this repository **with submodules** to include the shared infrastructure:
+
+```bash
+git clone --recurse-submodules https://github.com/JRW-lab/Common_Wireless_Simulator.git
+```
+
+If you already cloned without submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
+### MATLAB Path Setup
+
+Add the project directories to your MATLAB path:
+
+```matlab
+addpath('Common-Wireless-Infrastructure/Meta Functions');
+addpath('Comm Functions/Custom Functions');
+addpath('Comm Functions/Generation Functions');
+addpath('Comm Functions/ODDM Functions');
+addpath('Comm Functions/OFDM Functions');
+addpath('Comm Functions/OTFS Functions');
+addpath('Comm Functions/OTFS-DD Functions');
+addpath('Comm Functions/TODDM Functions');
+addpath('Comm Functions/TX RX Functions');
+```
+
+## Usage
+
+1. Open `CommonWirelessSimulator.mlapp` in MATLAB. The GUI allows you to select from a series of options.
+2. `saved_profiles.m` contains simulation profiles that can be selected on startup.
+3. If a sufficient number of frames is not already simulated, `sim_save.m` is run for a specific system with a set of defined parameters. (A minimum of one simulated frame per simulation point is needed to render figures.)
+4. Based on the `system_name` in parameters, a simulation file is selected and additional frames are run.
+5. Steps 3-4 are repeated until all configurations have the sufficient number of frames for figure rendering.
+6. `gen_table.m`, `gen_figure_v2.m` or `gen_hex_layout.m` is run to generate a figure/table and save.
 
 ## Configuration Setup
-In 'saved_profiles.m', there are examples of simulation profiles. There you will see several pre-configured profiles to use as reference for your own profile. Profiles work by defining the primary variable for a parametric sweep and the corresponding range. If a figure is being rendered, this is the range of the plot, and each line of the parameter 'configs' specifies a line on the plot, and each line has its own custom parameters separate from those specified in default_parameters. Once all the configs are defined, the user can be specific in defining the appearance of plots using several customizable parameters.
+
+In `saved_profiles.m`, there are examples of simulation profiles. Profiles work by defining the primary variable for a parametric sweep and the corresponding range. If a figure is being rendered, this is the range of the plot. Each line of the parameter `configs` specifies a line on the plot, with its own custom parameters separate from those in `default_parameters`. Once all configs are defined, you can customize plot appearance using `legend_vec`, `line_styles`, `line_colors`, and other visualization parameters.
+
+## Project Structure
+
+```
+Common_Wireless_Simulator/
+├── Common-Wireless-Infrastructure/   ← Shared Meta Functions (git submodule)
+│   └── Meta Functions/               ← DB I/O, hashing, visualization, CLI
+├── Comm Functions/
+│   ├── Custom Functions/              ← Ambiguity functions, DFT, reconstruction
+│   ├── Generation Functions/          ← Channel gen, data gen, pulse shaping
+│   ├── ODDM Functions/               ← ODDM-specific simulation
+│   ├── OFDM Functions/               ← OFDM-specific simulation
+│   ├── OTFS Functions/               ← OTFS-specific simulation
+│   ├── OTFS-DD Functions/            ← OTFS-DD channel matrix, sim_fun
+│   ├── TODDM Functions/              ← Tri-orthogonal ODDM
+│   └── TX RX Functions/              ← Modulators, equalizers, demodulators
+├── Pre-rendered Lookup Tables/        ← Cached ambiguity function results
+├── Data/                              ← Output storage (Excel/MySQL)
+├── Figures/                           ← Generated plots
+├── saved_profiles.m                   ← Simulation profile definitions
+├── sim_head.m                         ← Orchestrator: grid construction + loop
+├── sim_save.m                         ← Simulation dispatch by system_name
+└── CommonWirelessSimulator.mlapp      ← GUI frontend
+```
+
+## Supported Systems
+
+| System | Description |
+|--------|-------------|
+| OFDM | Orthogonal Frequency Division Multiplexing (CP and CP-free) |
+| OTFS | Orthogonal Time Frequency Space modulation |
+| OTFS-DD | OTFS with direct delay-Doppler processing (Dr. Wu's formulation) |
+| ODDM | Orthogonal Delay-Doppler Multiplexing (CP and CP-free) |
+| TODDM | Tri-orthogonal ODDM with U frequency levels |
+
+## Supported Receivers
+
+MMSE, CMC-MMSE, CMC-MMSE-AWGN, MP (Message Passing), DD-BDFE, ML (exhaustive search)
 
 ## Further Questions
-For any questions please contact jrwimer@uark.edu or visit [my website](https://jrw-lab.github.io). 
+
+For any questions please contact jrwimer@uark.edu or visit [my website](https://jrw-lab.github.io).

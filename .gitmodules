@@ -1,0 +1,3 @@
+[submodule "Common-Wireless-Infrastructure"]
+	path = Common-Wireless-Infrastructure
+	url = https://github.com/JRW-lab/Common-Wireless-Infrastructure.git
