@@ -1,4 +1,4 @@
-function sim_head(app_settings)
+function finish_flag = sim_head(app_settings)
 % This file tests the BER/SER/FER for a few wireless communications
 % systems (supported: OFDM, OTFS, ODDM, TODDM), with settings specified in each
 % profile. Data is saved in a MySQL server so a password is required.
@@ -60,6 +60,9 @@ for i = 1:numel(fields_names)
 end
 figure_data.ylim_vec = ylim_vec;
 figure_data.legend_loc = legend_loc;
+if isfield(app_settings, 'figure_statistic') && ~isempty(app_settings.figure_statistic)
+    data_type = app_settings.figure_statistic;
+end
 figure_data.data_type = data_type;
 figure_data.primary_var = primary_var;
 figure_data.primary_vals = primary_vals;
@@ -397,3 +400,6 @@ end
 
 % Close connection with database
 close(conn);
+
+% Set finish flag
+finish_flag = true;
