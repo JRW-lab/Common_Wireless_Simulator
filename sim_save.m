@@ -25,8 +25,12 @@ switch save_data.priority
                 T = table;
             end
         elseif save_data.save_mysql
-            conn = mysql_login(conn.DataSource);
-            T = mysql_load(conn,table_name,"*");
+            try
+                T = mysql_load(conn,table_name,"*");
+            catch
+                conn = mysql_login(conn.DataSource);
+                T = mysql_load(conn,table_name,"*");
+            end
         end
 end
 try
