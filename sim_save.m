@@ -20,10 +20,9 @@ switch save_data.priority
     case "local"
         if save_data.save_excel
             try
-                T = mysql_load(conn,table_name,"*");
+                T = readtable(save_data.excel_path, 'TextType', 'string');
             catch
-                conn = mysql_login(conn.DataSource);
-                T = mysql_load(conn,table_name,"*");
+                T = table;
             end
         elseif save_data.save_mysql
             conn = mysql_login(conn.DataSource);

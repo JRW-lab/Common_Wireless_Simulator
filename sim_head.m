@@ -8,7 +8,7 @@ clc;
 
 % Import settings from matlab app
 table_name = app_settings.table_name;
-use_parellelization = app_settings.use_parellelization;
+use_parallel = app_settings.use_parallel;
 frames_per_iter = app_settings.frames_per_iter;
 priority = app_settings.priority;
 save_excel = app_settings.save_excel;
@@ -28,8 +28,8 @@ save_data.excel_name = table_name;
 save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".xlsx");
 
 % Set paths and data
-addpath(fullfile(pwd, 'Common-Wireless-Infrastructure', 'Meta Functions'));
 addpath(fullfile(pwd, 'Meta Functions'));
+addpath(fullfile(pwd, 'Common-Wireless-Infrastructure', 'Meta Functions'));
 addpath(fullfile(pwd, 'Comm Functions'));
 addpath(fullfile(pwd, 'Comm Functions/Custom Functions'));
 addpath(fullfile(pwd, 'Comm Functions/Generation Functions'));
@@ -53,10 +53,10 @@ end
 render_figure = true;
 
 % Extract data from profile
-p_sel = all_profiles{profile_sel};
-fields_names = fieldnames(p_sel);
+profile = all_profiles{profile_sel};
+fields_names = fieldnames(profile);
 for i = 1:numel(fields_names)
-    eval([fields_names{i} ' = p_sel.(fields_names{i});']);
+    eval([fields_names{i} ' = profile.(fields_names{i});']);
 end
 figure_data.ylim_vec = ylim_vec;
 figure_data.legend_loc = legend_loc;
@@ -142,36 +142,36 @@ switch save_data.priority
 end
 
 %% Make parameters for each sim point
-prvr_len = length(primary_vals);
-conf_len = length(configs); %#ok<USENS>
-system_names = cell(prvr_len,conf_len);
-params_cell = cell(prvr_len,conf_len);
-hash_cell = cell(prvr_len,conf_len);
+num_primary = length(primary_vals);
+num_configs = length(configs); %#ok<USENS>
+system_names = cell(num_primary,num_configs);
+params_cell = cell(num_primary,num_configs);
+hash_cell = cell(num_primary,num_configs);
 prior_frames = zeros(length(primary_vals),length(configs));
-for primvar_sel = 1:prvr_len
+for primary_idx = 1:num_primary
 
     % Set primary variable
-    primvar_val = primary_vals(primvar_sel);
+    primary_val = primary_vals(primary_idx);
 
     % Go through each settings profile
-    for sel = 1:conf_len
+    for config_idx = 1:num_configs
 
         % Create parameters instance
         parameters = default_parameters;
-        parameters.(primary_var) = primvar_val;
-        config_sel = configs{sel};
+        parameters.(primary_var) = primary_val;
+        config_sel = configs{config_idx};
         config_fields = fields(config_sel);
         for i = 1:length(config_fields)
             parameters.(config_fields{i}) = config_sel.(config_fields{i});
         end
 
         % Remove unnecessary variables to get correct hash
-        system_names{primvar_sel,sel} = parameters.system_name;
-        if system_names{primvar_sel,sel} == "ODDM"
+        system_names{primary_idx,config_idx} = parameters.system_name;
+        if system_names{primary_idx,config_idx} == "ODDM"
             parameters = rmfield(parameters, 'U');
-        elseif system_names{primvar_sel,sel} == "OTFS"
+        elseif system_names{primary_idx,config_idx} == "OTFS"
             parameters = rmfield(parameters, 'U');
-        elseif system_names{primvar_sel,sel} == "OFDM"
+        elseif system_names{primary_idx,config_idx} == "OFDM"
             parameters = rmfield(parameters, 'N');
             parameters = rmfield(parameters, 'U');
             parameters = rmfield(parameters, 'shape');
@@ -188,12 +188,12 @@ for primvar_sel = 1:prvr_len
         end
 
         % Add parameters to stack
-        params_cell{primvar_sel,sel} = parameters;
+        params_cell{primary_idx,config_idx} = parameters;
         [~,paramHash] = jsonencode_sorted(parameters);
-        hash_cell{primvar_sel,sel} = paramHash;
+        hash_cell{primary_idx,config_idx} = paramHash;
 
         % Either delete the saved data and reset, or note previous progress
-        if delete_sel && ismember(sel,delete_configs)
+        if delete_sel && ismember(config_idx,delete_configs)
             % Delete data from database/table
             switch save_data.priority
                 case "mysql"
@@ -217,9 +217,9 @@ for primvar_sel = 1:prvr_len
             % Load data from DB
             try
                 sim_result = T(string(T.param_hash) == paramHash, :);
-                prior_frames(primvar_sel,sel) = sim_result.frames_simulated;
+                prior_frames(primary_idx,config_idx) = sim_result.frames_simulated;
             catch
-                prior_frames(primvar_sel,sel) = 0;
+                prior_frames(primary_idx,config_idx) = 0;
             end
         end
 
@@ -259,7 +259,7 @@ min_frames = min(prior_frames,[],"all");
 if ~skip_simulations
 
     % Set up connection to MySQL server
-    if use_parellelization
+    if use_parallel
         if isempty(gcp('nocreate'))
             poolCluster = parcluster('local');
             maxCores = poolCluster.NumWorkers;  % Get the max number of workers available
@@ -278,34 +278,34 @@ if ~skip_simulations
         end
 
         if min_frames < current_frames
-            if use_parellelization
+            if use_parallel
 
                 % Go through each settings profile
-                parfor primvar_sel = 1:prvr_len
-                    for sel = 1:conf_len
-                        if current_frames > prior_frames(primvar_sel,sel)
+                parfor primary_idx = 1:num_primary
+                    for config_idx = 1:num_configs
+                        if current_frames > prior_frames(primary_idx,config_idx)
 
                             % Select parameters and hash
-                            parameters = params_cell{primvar_sel,sel};
-                            paramHash = hash_cell{primvar_sel,sel};
+                            parameters = params_cell{primary_idx,config_idx};
+                            paramHash = hash_cell{primary_idx,config_idx};
 
                             % Notify main thread of progress
                             progress_bar_data = parameters;
                             progress_bar_data.profile_sel = profile_sel;
-                            progress_bar_data.system_name = system_names{primvar_sel,sel};
+                            progress_bar_data.system_name = system_names{primary_idx,config_idx};
                             progress_bar_data.num_iters = num_iters;
                             progress_bar_data.iter = iter;
-                            progress_bar_data.primvar_sel = primvar_sel;
-                            progress_bar_data.sel = sel;
-                            progress_bar_data.prvr_len = prvr_len;
-                            progress_bar_data.conf_len = conf_len;
+                            progress_bar_data.primary_idx = primary_idx;
+                            progress_bar_data.config_idx = config_idx;
+                            progress_bar_data.num_primary = num_primary;
+                            progress_bar_data.num_configs = num_configs;
                             progress_bar_data.current_frames = current_frames;
                             progress_bar_data.num_frames = num_frames;
                             send(dq, progress_bar_data);
 
                             % Simulate under current settings
                             sim_save(save_data,conn,table_name,current_frames,parameters,paramHash);
-                            prior_frames(primvar_sel,sel) = prior_frames(primvar_sel,sel) + frames_per_iter;
+                            prior_frames(primary_idx,config_idx) = prior_frames(primary_idx,config_idx) + frames_per_iter;
 
                         end
                     end
@@ -313,31 +313,31 @@ if ~skip_simulations
             else
 
                 % Go through each settings profile
-                for primvar_sel = 1:prvr_len
-                    for sel = 1:conf_len
-                        if current_frames > prior_frames(primvar_sel,sel)
+                for primary_idx = 1:num_primary
+                    for config_idx = 1:num_configs
+                        if current_frames > prior_frames(primary_idx,config_idx)
 
                             % Select parameters
-                            parameters = params_cell{primvar_sel,sel};
-                            paramHash = hash_cell{primvar_sel,sel};
+                            parameters = params_cell{primary_idx,config_idx};
+                            paramHash = hash_cell{primary_idx,config_idx};
 
                             % Notify main thread of progress
                             progress_bar_data = parameters;
                             progress_bar_data.profile_sel = profile_sel;
-                            progress_bar_data.system_name = system_names{primvar_sel,sel};
+                            progress_bar_data.system_name = system_names{primary_idx,config_idx};
                             progress_bar_data.num_iters = num_iters;
                             progress_bar_data.iter = iter;
-                            progress_bar_data.primvar_sel = primvar_sel;
-                            progress_bar_data.sel = sel;
-                            progress_bar_data.prvr_len = prvr_len;
-                            progress_bar_data.conf_len = conf_len;
+                            progress_bar_data.primary_idx = primary_idx;
+                            progress_bar_data.config_idx = config_idx;
+                            progress_bar_data.num_primary = num_primary;
+                            progress_bar_data.num_configs = num_configs;
                             progress_bar_data.current_frames = current_frames;
                             progress_bar_data.num_frames = num_frames;
                             send(dq, progress_bar_data);
 
                             % Simulate under current settings
                             sim_save(save_data,conn,table_name,current_frames,parameters,paramHash);
-                            prior_frames(primvar_sel,sel) = prior_frames(primvar_sel,sel) + frames_per_iter;
+                            prior_frames(primary_idx,config_idx) = prior_frames(primary_idx,config_idx) + frames_per_iter;
 
                         end
                     end
@@ -367,11 +367,11 @@ if ~skip_simulations
                 conn = mysql_login(conn.DataSource);
                 T = mysql_load(conn,table_name,"*");
             end
-            for primvar_sel = 1:prvr_len
-                for sel = 1:conf_len
-                    paramHash = hash_cell{primvar_sel,sel};
+            for primary_idx = 1:num_primary
+                for config_idx = 1:num_configs
+                    paramHash = hash_cell{primary_idx,config_idx};
                     sim_result = T(string(T.param_hash) == paramHash, :);
-                    prior_frames(primvar_sel,sel) = sim_result.frames_simulated;
+                    prior_frames(primary_idx,config_idx) = sim_result.frames_simulated;
                 end
             end
 
