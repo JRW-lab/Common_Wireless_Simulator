@@ -364,17 +364,47 @@ if ~skip_simulations
             end
 
             % Update number of frames
-            try
-                T = mysql_load(conn,table_name,"*");
-            catch
-                conn = mysql_login(conn.DataSource);
-                T = mysql_load(conn,table_name,"*");
+            switch save_data.priority
+                case "mysql"
+                    if save_data.save_mysql
+                        try
+                            T = mysql_load(conn,table_name,"*");
+                        catch
+                            conn = mysql_login(conn.DataSource);
+                            T = mysql_load(conn,table_name,"*");
+                        end
+                    elseif save_data.save_excel
+                        try
+                            T = readtable(save_data.excel_path, 'TextType', 'string');
+                        catch
+                            T = table;
+                        end
+                    end
+                case "local"
+                    if save_data.save_excel
+                        try
+                            T = readtable(save_data.excel_path, 'TextType', 'string');
+                        catch
+                            T = table;
+                        end
+                    elseif save_data.save_mysql
+                        try
+                            T = mysql_load(conn,table_name,"*");
+                        catch
+                            conn = mysql_login(conn.DataSource);
+                            T = mysql_load(conn,table_name,"*");
+                        end
+                    end
             end
             for primary_idx = 1:num_primary
                 for config_idx = 1:num_configs
                     paramHash = hash_cell{primary_idx,config_idx};
-                    sim_result = T(string(T.param_hash) == paramHash, :);
-                    prior_frames(primary_idx,config_idx) = sim_result.frames_simulated;
+                    try
+                        sim_result = T(string(T.param_hash) == paramHash, :);
+                        prior_frames(primary_idx,config_idx) = sim_result.frames_simulated;
+                    catch
+                        prior_frames(primary_idx,config_idx) = 0;
+                    end
                 end
             end
 
@@ -399,7 +429,9 @@ if render_figure
 end
 
 % Close connection with database
-close(conn);
+if ~isempty(conn)
+    close(conn);
+end
 
 % Set finish flag
 finish_flag = true;
