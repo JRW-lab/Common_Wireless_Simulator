@@ -4,8 +4,12 @@ Final Results/
 Data/
 Legacy/
 Pre-rendered Lookup Tables/
+Logs/
 
 % Ignore specific files
 test.m
 configurations.m
 *.asv
+
+% Local MySQL credentials - never commit, machine-specific
+mysql_local.json

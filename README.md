@@ -10,6 +10,10 @@ Results can be stored either locally in an Excel file or in an SQL database.
 - Database Toolbox (for MySQL storage)
 - Communications Toolbox, Signal Processing Toolbox
 
+## MySQL Setup (Optional)
+
+Results can be saved locally to Excel, to MySQL, or both - MySQL is entirely optional. The first time you enable it, `mysql_login.m` walks you through a one-time setup: it looks for a MySQL server on `localhost`, asks for its password if found (or a remote host if not - or you can skip it entirely), verifies the connection, and creates the `comm_database` schema automatically if it doesn't exist. Your credentials are cached in a git-ignored `mysql_local.json` at the project root and never touch version control. Skip this step and results just save to Excel.
+
 ## Getting Started
 
 Clone this repository **with submodules** to include the shared infrastructure:
