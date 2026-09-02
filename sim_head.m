@@ -380,15 +380,11 @@ loop_min_frames = min(prior_frames,[],"all");
 is_sufficient = false(num_primary, num_configs); %#ok<NASGU>
 if ~skip_simulations
 
-    % Set up connection to MySQL server
-    if use_parallel
-        if isempty(gcp('nocreate'))
-            poolCluster = parcluster('local');
-            maxCores = poolCluster.NumWorkers;  % Get the max number of workers available
-            parpool(poolCluster, maxCores);     % Start a parallel pool with all available workers
-        end
-        parfevalOnAll(@() javaaddpath('mysql-connector-j-8.4.0.jar'), 0);
-    end
+    % Parallel pool is started lazily, the first time there's actually a
+    % point left to simulate (below) - not here, since at this point every
+    % point may already have enough frames and the loop below may do
+    % nothing at all.
+    pool_ready = false;
 
     iter = 0;
     all_done = false;
@@ -407,6 +403,15 @@ if ~skip_simulations
 
         if loop_min_frames < current_frames
             if use_parallel
+                if ~pool_ready
+                    if isempty(gcp('nocreate'))
+                        poolCluster = parcluster('local');
+                        maxCores = poolCluster.NumWorkers;  % Get the max number of workers available
+                        parpool(poolCluster, maxCores);     % Start a parallel pool with all available workers
+                    end
+                    parfevalOnAll(@() javaaddpath('mysql-connector-j-8.4.0.jar'), 0);
+                    pool_ready = true;
+                end
 
                 % Go through each settings profile
                 parfor primary_idx = 1:num_primary
@@ -488,15 +493,19 @@ if ~skip_simulations
                 end
             end
 
-            % Update number of frames
+            % Update number of frames. mysql_load is scoped to this
+            % profile's own param_hashes (an indexed lookup) rather than
+            % "*" (a full-table scan) - the results table is now shared
+            % across every project, so a full reload here would only get
+            % slower as everyone else's history accumulates.
             switch save_data.priority
                 case "mysql"
                     if save_data.save_mysql
                         try
-                            T = mysql_load(conn,table_name,"*");
+                            T = mysql_load(conn,table_name,hash_cell(:));
                         catch
                             conn = mysql_login(conn.DataSource);
-                            T = mysql_load(conn,table_name,"*");
+                            T = mysql_load(conn,table_name,hash_cell(:));
                         end
                     elseif save_data.save_excel
                         try
@@ -514,10 +523,10 @@ if ~skip_simulations
                         end
                     elseif save_data.save_mysql
                         try
-                            T = mysql_load(conn,table_name,"*");
+                            T = mysql_load(conn,table_name,hash_cell(:));
                         catch
                             conn = mysql_login(conn.DataSource);
-                            T = mysql_load(conn,table_name,"*");
+                            T = mysql_load(conn,table_name,hash_cell(:));
                         end
                     end
             end
