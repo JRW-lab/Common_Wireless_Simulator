@@ -1,4 +1,4 @@
-function metrics = sim_fun_OFDM_v2(new_frames,parameters)
+function [metrics,frame_data] = sim_fun_OFDM_v2(new_frames,parameters)
 
 % Make parameters
 fields = fieldnames(parameters);
@@ -201,8 +201,14 @@ for frame = 1:new_frames
 
     % Compute number of errors in this frame and add to stack
     error_vec = RX_data ~= TX_data;
-    bit_errors(frame) = log2(M_ary) * sum(error_vec(:));
     sym_errors(frame) = sum(error_vec(:));
+    % Count actual bit errors (Hamming distance of the bit mapping), so that
+    % BER is not forced equal to SER. Symbol index i (1..M_ary) maps to the
+    % binary representation of (i-1).
+    bits_per_sym = log2(M_ary);
+    tx_bits = dec2bin(TX_data - 1, bits_per_sym) - '0';
+    rx_bits = dec2bin(RX_data - 1, bits_per_sym) - '0';
+    bit_errors(frame) = sum(sum(abs(tx_bits - rx_bits)));
     if sum(sym_errors(frame)) > 0
         frm_errors(frame) = 1;
     end
@@ -221,6 +227,14 @@ metrics.Thr = (log2(M_ary) * syms_per_f * (1 - metrics.FER)) / (frame_duration *
 metrics.RX_iters = mean(iters_vec);
 metrics.t_RXiter = mean(t_RXiter_vec);
 metrics.t_RXfull = mean(t_RXfull_vec);
+
+% Per-frame data for logging / stability check
+frame_data.bit_errors = bit_errors;
+frame_data.sym_errors = sym_errors;
+frame_data.frm_errors = frm_errors;
+frame_data.t_RXfull = t_RXfull_vec;
+frame_data.bits_per_frame = syms_per_f * log2(M_ary);
+frame_data.syms_per_frame = syms_per_f;
 
 end
 

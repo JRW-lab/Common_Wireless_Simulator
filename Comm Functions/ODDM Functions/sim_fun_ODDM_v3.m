@@ -1,4 +1,4 @@
-function [metrics,sym_errors] = sim_fun_ODDM_v3(new_frames,parameters)
+function [metrics,frame_data] = sim_fun_ODDM_v3(new_frames,parameters)
 
 % Make parameters
 fields = fieldnames(parameters);
@@ -142,3 +142,11 @@ metrics.Thr = (log2(M_ary) * syms_per_f * (1 - metrics.FER)) / (frame_duration *
 metrics.RX_iters = mean(iters_vec);
 metrics.t_RXiter = mean(t_RXiter_vec);
 metrics.t_RXfull = mean(t_RXfull_vec);
+
+% Per-frame data for logging / stability check
+frame_data.bit_errors = sum(bit_errors, 2);
+frame_data.sym_errors = sum(sym_errors, 2);
+frame_data.frm_errors = frm_errors;
+frame_data.t_RXfull = t_RXfull_vec;
+frame_data.bits_per_frame = syms_per_f * log2(M_ary);
+frame_data.syms_per_frame = syms_per_f;

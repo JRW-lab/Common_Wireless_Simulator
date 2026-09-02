@@ -1,4 +1,4 @@
-function metrics = sim_fun_OTFS(new_frames,parameters)
+function [metrics,frame_data] = sim_fun_OTFS(new_frames,parameters)
 
 % Make parameters
 fields = fieldnames(parameters);
@@ -19,6 +19,8 @@ if CP
     M = M + M_cp;
     Ts = T / M;
     L2 = floor(2510*10^(-9) / Ts);
+else
+    M_cp = 0;
 end
 
 % Input conversion
@@ -114,9 +116,9 @@ elseif receiver_name == "BDFE"
 end
 
 % Simulation loop
-data_errors = 0;
-bin_errors = 0;
-frame_errors = 0;
+bit_errors = zeros(new_frames,1);
+sym_errors = zeros(new_frames,1);
+frm_errors = zeros(new_frames,1);
 t_RXiter_vec = zeros(new_frames,1);
 t_RXfull_vec = zeros(new_frames,1);
 for frame = 1:new_frames
@@ -239,10 +241,10 @@ for frame = 1:new_frames
     end
 
     % Update SER and BER
-    data_errors = data_errors + sum(data_error_vec,"all");
-    bin_errors = bin_errors + sum(bin_error_vec,"all");
-    if sum(bin_error_vec,"all") > 0
-        frame_errors = frame_errors + 1;
+    sym_errors(frame) = sum(data_error_vec, "all");
+    bit_errors(frame) = sum(bin_error_vec, "all");
+    if bit_errors(frame) > 0
+        frm_errors(frame) = 1;
     end
     t_RXiter_vec(frame) = toc(tStartRX);
     t_RXfull_vec(frame) = t_RXiter_vec(frame);
@@ -259,10 +261,18 @@ if CP
 end
 
 % Calculate BER, SER and FER
-metrics.BER = bin_errors / (new_frames * syms_per_f * log2(M_ary));
-metrics.SER = data_errors / (new_frames * syms_per_f);
-metrics.FER = frame_errors / new_frames;
+metrics.BER = sum(bit_errors) / (new_frames * syms_per_f * log2(M_ary));
+metrics.SER = sum(sym_errors) / (new_frames * syms_per_f);
+metrics.FER = sum(frm_errors) / new_frames;
 metrics.Thr = (log2(M_ary) * syms_per_f * (1 - metrics.FER)) / (frame_duration * bandwidth_hz);
 metrics.RX_iters = mean(iters_vec);
 metrics.t_RXiter = mean(t_RXiter_vec);
 metrics.t_RXfull = mean(t_RXfull_vec);
+
+% Per-frame data for logging / stability check
+frame_data.bit_errors = bit_errors;
+frame_data.sym_errors = sym_errors;
+frame_data.frm_errors = frm_errors;
+frame_data.t_RXfull = t_RXfull_vec;
+frame_data.bits_per_frame = syms_per_f * log2(M_ary);
+frame_data.syms_per_frame = syms_per_f;

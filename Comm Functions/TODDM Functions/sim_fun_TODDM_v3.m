@@ -1,4 +1,4 @@
-function metrics = sim_fun_TODDM_v3(new_frames,parameters)
+function [metrics,frame_data] = sim_fun_TODDM_v3(new_frames,parameters)
 
 % Make parameters
 fields = fieldnames(parameters);
@@ -82,7 +82,10 @@ for frame = 1:new_frames
     % Equalize received signal
     switch receiver_name
         case "CMC-MMSE"
-            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = OTFS_pulse_equalizer_AWGN(yDD,HDD,N*U,M,L2,-L1,Es,N0,S,N_iters);
+            tStartRX = tic;
+            [x_hat,iters_vec(frame)] = OTFS_pulse_equalizer_AWGN(yDD,HDD,N*U,M,L2,-L1,Es,N0,S,N_iters);
+            t_RXfull_vec(frame) = toc(tStartRX);
+            t_RXiter_vec(frame) = t_RXfull_vec(frame);
         case "MMSE"
             [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(yDD,HDD,Es,N0);
         otherwise
@@ -120,3 +123,11 @@ metrics.Thr = (log2(M_ary) * syms_per_f * (1 - metrics.FER)) / (frame_duration *
 metrics.RX_iters = mean(iters_vec);
 metrics.t_RXiter = mean(t_RXiter_vec);
 metrics.t_RXfull = mean(t_RXfull_vec);
+
+% Per-frame data for logging / stability check
+frame_data.bit_errors = sum(bit_errors, 2);
+frame_data.sym_errors = sum(sym_errors, 2);
+frame_data.frm_errors = frm_errors;
+frame_data.t_RXfull = t_RXfull_vec;
+frame_data.bits_per_frame = syms_per_f * log2(M_ary);
+frame_data.syms_per_frame = syms_per_f;
