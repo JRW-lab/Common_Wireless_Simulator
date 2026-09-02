@@ -41,6 +41,16 @@ if isfield(app_settings, 'confidence')
     confidence = app_settings.confidence;
 end
 
+% Optional GUI progress callbacks
+progress_fcn = [];
+if isfield(app_settings, 'progress_fcn')
+    progress_fcn = app_settings.progress_fcn;
+end
+convergence_fcn = [];
+if isfield(app_settings, 'convergence_fcn')
+    convergence_fcn = app_settings.convergence_fcn;
+end
+
 % Settings
 save_data.priority = priority;
 save_data.save_excel = save_excel;
@@ -363,6 +373,9 @@ end
 num_iters = ceil(num_frames / frames_per_iter);
 dq = parallel.pool.DataQueue;
 afterEach(dq, @updateProgressBar);
+if ~isempty(progress_fcn)
+    afterEach(dq, progress_fcn);
+end
 loop_min_frames = min(prior_frames,[],"all");
 is_sufficient = false(num_primary, num_configs); %#ok<NASGU>
 if ~skip_simulations
@@ -548,6 +561,10 @@ if ~skip_simulations
                 fprintf("--- Iteration %d/%d (%d frames) ---\n", iter, num_iters, current_frames);
                 fprintf("  %d/%d points sufficient\n", ...
                     sum(is_sufficient(:)), numel(is_sufficient));
+                if ~isempty(convergence_fcn)
+                    convergence_fcn(iter, num_iters, current_frames, ...
+                        sum(is_sufficient(:)), numel(is_sufficient));
+                end
 
                 if all(is_sufficient(:))
                     fprintf("All data points converged. Stopping early at iteration %d.\n", iter);
