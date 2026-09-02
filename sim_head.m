@@ -108,43 +108,52 @@ figure_data.save_sel = true;
 
 %% Database setup
 % Set up connection to MySQL server
+persistent table_verified
+if isempty(table_verified)
+    table_verified = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+end
 if save_data.save_mysql
     conn = mysql_login(dbname);
 
-    % Create database if it doesn't exist
-    if isempty(sqlfind(conn, table_name))
-        % Set up MySQL commands
-        sql_table = [
-            "CREATE TABLE " + table_name + " (" ...
-            "param_hash CHAR(64), " ...
-            "parameters JSON, " ...
-            "metrics JSON, " ...
-            "frames_simulated INT NOT NULL, " ...
-            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, " ...
-            "PRIMARY KEY (param_hash)" ...
-            ");"
-            ];
-        sql_flags = [
-            "CREATE TABLE system_flags (" ...
-            "id INT AUTO_INCREMENT PRIMARY KEY, " ...
-            "flag_value TINYINT(1) DEFAULT 0" ...
-            ");"
-            ];
-        sql_main_flag = "INSERT INTO system_flags (id, flag_value) VALUES (0, 0);";
+    % Create table/flags if this is the first time this session we've
+    % touched this table - once it's known to exist, skip the metadata
+    % round trip (sqlfind) on every later Simulate / Generate Figure click.
+    if ~isKey(table_verified, char(table_name))
+        if isempty(sqlfind(conn, table_name))
+            % Set up MySQL commands
+            sql_table = [
+                "CREATE TABLE " + table_name + " (" ...
+                "param_hash CHAR(64), " ...
+                "parameters JSON, " ...
+                "metrics JSON, " ...
+                "frames_simulated INT NOT NULL, " ...
+                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, " ...
+                "PRIMARY KEY (param_hash)" ...
+                ");"
+                ];
+            sql_flags = [
+                "CREATE TABLE system_flags (" ...
+                "id INT AUTO_INCREMENT PRIMARY KEY, " ...
+                "flag_value TINYINT(1) DEFAULT 0" ...
+                ");"
+                ];
+            sql_main_flag = "INSERT INTO system_flags (id, flag_value) VALUES (0, 0);";
 
-        % Execute commands
-        try
-            execute(conn, join(sql_table));
-        catch
+            % Execute commands
+            try
+                execute(conn, join(sql_table));
+            catch
+            end
+            try
+                execute(conn, join(sql_flags));
+            catch
+            end
+            try
+                execute(conn, join(sql_main_flag));
+            catch
+            end
         end
-        try
-            execute(conn, join(sql_flags));
-        catch
-        end
-        try
-            execute(conn, join(sql_main_flag));
-        catch
-        end
+        table_verified(char(table_name)) = true;
     end
 else
     conn = [];
@@ -612,10 +621,10 @@ if render_figure
     end
 end
 
-% Close connection with database
-if ~isempty(conn)
-    close(conn);
-end
+% Connection is left open (mysql_login caches and reuses it across calls
+% within this MATLAB session) rather than closed here - closing it would
+% throw away the whole point of that reuse, forcing the next Simulate /
+% Generate Figure click to pay a fresh connection handshake again.
 
 % Set finish flag
 finish_flag = true;
