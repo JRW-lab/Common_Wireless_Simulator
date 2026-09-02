@@ -155,31 +155,7 @@ if ~isfolder(save_data.excel_folder)
     mkdir(save_data.excel_folder);
 end
 
-% Check already-saved results
-switch save_data.priority
-    case "mysql"
-        if save_data.save_mysql
-            T = mysql_load(conn,table_name,"*");
-        elseif save_data.save_excel
-            try
-                T = readtable(save_data.excel_path, 'TextType', 'string');
-            catch
-                T = table;
-            end
-        end
-    case "local"
-        if save_data.save_excel
-            try
-                T = readtable(save_data.excel_path, 'TextType', 'string');
-            catch
-                T = table;
-            end
-        elseif save_data.save_mysql
-            T = mysql_load(conn,table_name,"*");
-        end
-end
-
-%% Make parameters for each sim point
+%% Make parameters for each sim point (no DB access needed yet)
 num_primary = length(primary_vals);
 num_configs = length(configs); %#ok<USENS>
 system_names = cell(num_primary,num_configs);
@@ -279,6 +255,42 @@ for primary_idx = 1:num_primary
         params_cell{primary_idx,config_idx} = parameters;
         [~,paramHash] = jsonencode_sorted(parameters);
         hash_cell{primary_idx,config_idx} = paramHash;
+    end
+end
+
+% Check already-saved results, scoped to just this profile's own
+% param_hashes for MySQL (an indexed lookup against the primary key)
+% rather than "*" (a full-table scan) - the results table is shared
+% across every project, so pulling everyone's history here would only
+% get slower as it grows. Excel still reads the whole sheet since
+% readtable has no way to filter during the read.
+switch save_data.priority
+    case "mysql"
+        if save_data.save_mysql
+            T = mysql_load(conn,table_name,hash_cell(:));
+        elseif save_data.save_excel
+            try
+                T = readtable(save_data.excel_path, 'TextType', 'string');
+            catch
+                T = table;
+            end
+        end
+    case "local"
+        if save_data.save_excel
+            try
+                T = readtable(save_data.excel_path, 'TextType', 'string');
+            catch
+                T = table;
+            end
+        elseif save_data.save_mysql
+            T = mysql_load(conn,table_name,hash_cell(:));
+        end
+end
+
+%% Resolve prior progress / handle deletions for each sim point
+for primary_idx = 1:num_primary
+    for config_idx = 1:num_configs
+        paramHash = hash_cell{primary_idx,config_idx};
 
         % Either delete the saved data and reset, or note previous progress
         if delete_sel && ismember(config_idx,delete_configs)
@@ -310,8 +322,6 @@ for primary_idx = 1:num_primary
                 prior_frames(primary_idx,config_idx) = 0;
             end
         end
-
-
     end
 end
 
