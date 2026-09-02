@@ -33,6 +33,7 @@ git submodule update --init --recursive
 Add the project directories to your MATLAB path:
 
 ```matlab
+addpath('Common-Wireless-Infrastructure');
 addpath('Common-Wireless-Infrastructure/Meta Functions');
 addpath('Comm Functions/Custom Functions');
 addpath('Comm Functions/Generation Functions');
@@ -46,7 +47,7 @@ addpath('Comm Functions/TX RX Functions');
 
 ## Usage
 
-1. Open `CommonWirelessSimulator.mlapp` in MATLAB. The GUI allows you to select from a series of options.
+1. Run `launch_gui` in MATLAB. It opens the shared Wireless Simulator GUI, which lets you select from a series of options.
 2. `saved_profiles.m` contains simulation profiles that can be selected on startup.
 3. If a sufficient number of frames is not already simulated, `sim_save.m` is run for a specific system with a set of defined parameters. (A minimum of one simulated frame per simulation point is needed to render figures.)
 4. Based on the `system_name` in parameters, a simulation file is selected and additional frames are run.
@@ -61,7 +62,8 @@ In `saved_profiles.m`, there are examples of simulation profiles. Profiles work 
 
 ```
 Common_Wireless_Simulator/
-├── Common-Wireless-Infrastructure/   ← Shared Meta Functions (git submodule)
+├── Common-Wireless-Infrastructure/   ← Shared infrastructure (git submodule)
+│   ├── WirelessSimulator.m           ← GUI frontend, shared across projects
 │   └── Meta Functions/               ← DB I/O, hashing, visualization, CLI
 ├── Comm Functions/
 │   ├── Custom Functions/              ← Ambiguity functions, DFT, reconstruction
@@ -78,7 +80,7 @@ Common_Wireless_Simulator/
 ├── saved_profiles.m                   ← Simulation profile definitions
 ├── sim_head.m                         ← Orchestrator: grid construction + loop
 ├── sim_save.m                         ← Simulation dispatch by system_name
-└── CommonWirelessSimulator.mlapp      ← GUI frontend
+└── launch_gui.m                       ← Launches the shared GUI
 ```
 
 ## Supported Systems
