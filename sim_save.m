@@ -59,28 +59,68 @@ if run_flag
     % Simulate needed system
     switch parameters.system_name
         case "TODDM"
-            metrics_add = sim_fun_TODDM_v3(new_frames,parameters);
+            [metrics_add, frame_data] = sim_fun_TODDM_v3(new_frames,parameters);
         case "ODDM"
-            metrics_add = sim_fun_ODDM_v3(new_frames,parameters);
+            [metrics_add, frame_data] = sim_fun_ODDM_v3(new_frames,parameters);
         case "OTFS"
-            metrics_add = sim_fun_OTFS(new_frames,parameters); % Common method in literature
+            [metrics_add, frame_data] = sim_fun_OTFS(new_frames,parameters); % Common method in literature
         case "OTFS-DD"
-            metrics_add = sim_fun_OTFS_DD_v3(new_frames,parameters); % Dr. Jingxian Wu's design
+            if isfield(parameters,'channel_estimation_method') && parameters.channel_estimation_method ~= "none"
+                [metrics_add, frame_data] = sim_fun_OTFS_MUSIC(new_frames,parameters); % MUSIC channel estimation
+            else
+                [metrics_add, frame_data] = sim_fun_OTFS_DD_v3(new_frames,parameters); % Dr. Jingxian Wu's design, perfect CSI
+            end
         case "OFDM"
-            metrics_add = sim_fun_OFDM_v2(new_frames,parameters);
+            [metrics_add, frame_data] = sim_fun_OFDM_v2(new_frames,parameters);
         otherwise
             error("Invalid system selected.")
     end
+
+    % Determine the effective number of frames actually simulated. Most
+    % sim_funs run exactly new_frames, but estimators that run an indivisible
+    % trial (e.g. MUSIC channel estimation) report the true count via
+    % frame_data.n_sim_frames. Using the true count keeps frames_simulated
+    % and metrics_aux bookkeeping in sync with what was really simulated.
+    if isfield(frame_data, 'n_sim_frames') && ~isempty(frame_data.n_sim_frames)
+        n_eff = frame_data.n_sim_frames;
+    else
+        n_eff = new_frames;
+    end
+
+    % Build metrics_aux from frame_data
+    new_aux = build_metrics_aux(n_eff, frame_data);
+
+    % Write per-frame log (if enabled)
+    if isfield(save_data, 'enable_logging') && save_data.enable_logging
+        if isfield(save_data, 'log_dir') && ~isempty(save_data.log_dir)
+            if ~isfolder(save_data.log_dir)
+                mkdir(save_data.log_dir);
+            end
+            frame_idx_start = 0;
+            if ~isempty(sim_result)
+                frame_idx_start = sim_result.frames_simulated - n_eff;
+            end
+            write_frame_log(save_data.log_dir, paramHash, frame_idx_start, frame_data);
+        end
+    end
+
+    % Load old metrics_aux for merge
+    old_aux = [];
+    if ~isempty(sim_result) && ismember('metrics_aux', T.Properties.VariableNames) ...
+            && ~ismissing(sim_result.metrics_aux(1)) && ~isempty(sim_result.metrics_aux{1})
+        old_aux = jsondecode(sim_result.metrics_aux{1});
+    end
+    metrics_aux = merge_metrics_aux(old_aux, new_aux);
 
     % Write to database
     switch save_data.priority
         case "mysql"
             if save_data.save_mysql
                 try
-                    mysql_write(conn,table_name,parameters,new_frames,metrics_add);
+                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux);
                 catch
                     conn = mysql_login(conn.DataSource);
-                    mysql_write(conn,table_name,parameters,new_frames,metrics_add);
+                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux);
                 end
             end
             if save_data.save_excel
@@ -91,14 +131,14 @@ if run_flag
         case "local"
             if save_data.save_excel
                 excel_path = save_data.excel_path;
-                local_write(excel_path,parameters,new_frames,metrics_add);
+                local_write(excel_path,parameters,n_eff,metrics_add,metrics_aux);
             end
             if save_data.save_mysql
                 try
-                    mysql_write(conn,table_name,parameters,new_frames,metrics_add);
+                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux);
                 catch
                     conn = mysql_login(conn.DataSource);
-                    mysql_write(conn,table_name,parameters,new_frames,metrics_add);
+                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux);
                 end
             end
     end

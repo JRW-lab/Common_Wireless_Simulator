@@ -1,4 +1,4 @@
-function metrics = sim_fun_OTFS_DD_v3(new_frames,parameters)
+function [metrics,frame_data] = sim_fun_OTFS_DD_v3(new_frames,parameters)
 
 % Make parameters
 fields = fieldnames(parameters);
@@ -164,7 +164,7 @@ for frame = 1:new_frames
     [chn_g,chn_tau,chn_v] = channel_generation(Fc,vel);
     if shape == "rect" % rectangular ambiguity is closed form
         % Create H Matrix
-        H = gen_H(T,N,M,Lp,Ln,chn_g,chn_tau,chn_v,shape,alpha,t_offset);
+        H = gen_H(Ts,syms_per_f,Lp,Ln,chn_g,chn_tau,chn_v,shape,alpha,t_offset);
     else
         % Normalize tau and v to cohere with discrete ambig values
         chn_tau = round(chn_tau/res_chn_tau)*res_chn_tau;
@@ -182,7 +182,7 @@ for frame = 1:new_frames
         tap_f_range(tap_f_range > 1001) = 1001;
 
         % Create H Matrix
-        H = gen_H_direct(T,N,M,Lp,Ln,chn_g,chn_v,ambig_vals,tap_t_range,tap_f_range,t_offset);
+        H = gen_H_direct(Ts,syms_per_f,Lp,Ln,chn_g,chn_v,ambig_vals,tap_t_range,tap_f_range,t_offset);
     end
     H_tilde = gen_H_tilde(H,M,N,Lp,Ln,F_N);
 
@@ -235,3 +235,11 @@ metrics.Thr = (log2(M_ary) * syms_per_f * (1 - metrics.FER)) / (frame_duration *
 metrics.RX_iters = mean(iters_vec);
 metrics.t_RXiter = mean(t_RXiter_vec);
 metrics.t_RXfull = mean(t_RXfull_vec);
+
+% Per-frame data for logging / stability check
+frame_data.bit_errors = bit_errors(:,1);
+frame_data.sym_errors = sym_errors(:,1);
+frame_data.frm_errors = frm_errors;
+frame_data.t_RXfull = t_RXfull_vec;
+frame_data.bits_per_frame = syms_per_f * log2(M_ary);
+frame_data.syms_per_frame = syms_per_f;

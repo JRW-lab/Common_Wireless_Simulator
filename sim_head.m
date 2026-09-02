@@ -8,7 +8,12 @@ clc;
 
 % Import settings from matlab app
 table_name = app_settings.table_name;
-use_parallel = app_settings.use_parallel;
+use_parallel = false;
+if isfield(app_settings, 'use_parallel')
+    use_parallel = app_settings.use_parallel;
+elseif isfield(app_settings, 'use_parellelization') % legacy field name from CommonWirelessSimulator.mlapp
+    use_parallel = app_settings.use_parellelization;
+end
 frames_per_iter = app_settings.frames_per_iter;
 priority = app_settings.priority;
 save_excel = app_settings.save_excel;
@@ -18,6 +23,24 @@ num_frames = app_settings.num_frames;
 delete_sel = app_settings.delete_sel;
 iteratively_render = app_settings.iteratively_render;
 
+% Adaptive convergence settings (optional)
+enable_adaptive = false;
+relative_tolerance = 0.1;
+min_frames = 100;
+confidence = 0.95;
+if isfield(app_settings, 'enable_adaptive')
+    enable_adaptive = app_settings.enable_adaptive;
+end
+if isfield(app_settings, 'relative_tolerance')
+    relative_tolerance = app_settings.relative_tolerance;
+end
+if isfield(app_settings, 'min_frames')
+    min_frames = app_settings.min_frames;
+end
+if isfield(app_settings, 'confidence')
+    confidence = app_settings.confidence;
+end
+
 % Settings
 save_data.priority = priority;
 save_data.save_excel = save_excel;
@@ -26,6 +49,8 @@ dbname     = 'comm_database';
 save_data.excel_folder = 'Data';
 save_data.excel_name = table_name;
 save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".xlsx");
+save_data.enable_logging = enable_adaptive;
+save_data.log_dir = fullfile('Logs', table_name);
 
 % Set paths and data
 addpath(fullfile(pwd, 'Meta Functions'));
@@ -161,6 +186,12 @@ for primary_idx = 1:num_primary
 
         % Create parameters instance
         parameters = default_parameters;
+        if exist('MUSIC_settings','var')
+            parameters = mergestructs(parameters,MUSIC_settings);
+        end
+        if exist('vehicle_motion_settings','var')
+            parameters = mergestructs(parameters,vehicle_motion_settings);
+        end
         parameters.(primary_var) = primary_val;
         config_sel = configs{config_idx};
         config_fields = fields(config_sel);
@@ -188,6 +219,50 @@ for primary_idx = 1:num_primary
             if parameters.shape == "rect" || parameters.shape == "ideal"
                 parameters.Q = 1;
             end
+        end
+
+        % MUSIC channel-estimation settings clean-up (only present when a
+        % profile sets channel_estimation_method, e.g. OTFS-DD MUSIC profiles)
+        if isfield(parameters,'channel_estimation_method')
+            if parameters.channel_estimation_method == "none"
+                parameters = rmfield(parameters, 'frames_per_trial');
+                parameters = rmfield(parameters, 'num_init_frames');
+                parameters = rmfield(parameters, 'num_pilot_frames_during_init');
+                parameters = rmfield(parameters, 'pilot_frame_frequency');
+                parameters = rmfield(parameters, 'num_pseudo_frames');
+                parameters = rmfield(parameters, 'num_pilots');
+                parameters = rmfield(parameters, 'R_x_size');
+                parameters = rmfield(parameters, 'enforce_toeplitz');
+                parameters = rmfield(parameters, 'cov_epsilon');
+                parameters = rmfield(parameters, 'shrinkage_alpha');
+                parameters = rmfield(parameters, 'v_res');
+                parameters = rmfield(parameters, 'simulate_vehicle');
+                parameters = rmfield(parameters, 'num_paths');
+                parameters = rmfield(parameters, 'bs_loc');
+                parameters = rmfield(parameters, 'multipath_range');
+                parameters = rmfield(parameters, 'min_bounce_dist');
+                parameters = rmfield(parameters, 'use_true_x_cov');
+                parameters.pilot_energy_alloc = 0;
+            else
+                if ~parameters.simulate_vehicle
+                    parameters = rmfield(parameters, 'num_paths');
+                    parameters = rmfield(parameters, 'bs_loc');
+                    parameters = rmfield(parameters, 'multipath_range');
+                    parameters = rmfield(parameters, 'min_bounce_dist');
+                end
+                if parameters.num_pilot_frames_during_init == 0 && parameters.pilot_frame_frequency == 0
+                    parameters.num_pseudo_frames = 0;
+                end
+                if parameters.num_pilot_frames_during_init > parameters.num_init_frames
+                    parameters.num_pilot_frames_during_init = parameters.num_init_frames;
+                end
+                if parameters.use_true_x_cov % These are set this way arbitrarily, doesn't really affect anything
+                    parameters.shrinkage_alpha = 0.1;
+                    parameters.enforce_toeplitz = true;
+                end
+            end
+            parameters.pilot_energy_gain = parameters.pilot_energy_alloc;
+            parameters = rmfield(parameters, 'pilot_energy_alloc');
         end
 
         % Add parameters to stack
@@ -235,6 +310,36 @@ if delete_sel && save_data.save_excel
     writetable(T, save_data.excel_path);
 end
 
+% Clean up adaptive logs at start of run
+if enable_adaptive
+    save_data.enable_logging = true;
+    save_data.log_dir = fullfile('Logs', table_name);
+    if isfolder(save_data.log_dir)
+        rmdir(save_data.log_dir, 's');
+    end
+    mkdir(save_data.log_dir);
+    % Clear metrics_aux from main table
+    if save_data.save_mysql
+        try
+            execute(conn, "UPDATE " + table_name + " SET metrics_aux = NULL");
+        catch
+        end
+    end
+    if save_data.save_excel
+        try
+            T_reset = readtable(save_data.excel_path, 'TextType', 'string');
+            if ismember('metrics_aux', T_reset.Properties.VariableNames)
+                T_reset.metrics_aux(:) = missing;
+                writetable(T_reset, save_data.excel_path);
+            end
+        catch
+        end
+    end
+else
+    save_data.enable_logging = false;
+    save_data.log_dir = fullfile('Logs', table_name);
+end
+
 %% Simulation loop
 
 % Figure render settings
@@ -258,7 +363,8 @@ end
 num_iters = ceil(num_frames / frames_per_iter);
 dq = parallel.pool.DataQueue;
 afterEach(dq, @updateProgressBar);
-min_frames = min(prior_frames,[],"all");
+loop_min_frames = min(prior_frames,[],"all");
+is_sufficient = false(num_primary, num_configs); %#ok<NASGU>
 if ~skip_simulations
 
     % Set up connection to MySQL server
@@ -271,7 +377,13 @@ if ~skip_simulations
         parfevalOnAll(@() javaaddpath('mysql-connector-j-8.4.0.jar'), 0);
     end
 
-    for iter = 1:num_iters
+    iter = 0;
+    all_done = false;
+    while ~all_done
+    iter = iter + 1;
+    if iter > num_iters
+        all_done = true;
+    else
 
         % Set current frame goal
         if iter < num_iters
@@ -280,13 +392,13 @@ if ~skip_simulations
             current_frames = num_frames;
         end
 
-        if min_frames < current_frames
+        if loop_min_frames < current_frames
             if use_parallel
 
                 % Go through each settings profile
                 parfor primary_idx = 1:num_primary
                     for config_idx = 1:num_configs
-                        if current_frames > prior_frames(primary_idx,config_idx)
+                        if current_frames > prior_frames(primary_idx,config_idx) && ~is_sufficient(primary_idx,config_idx)
 
                             % Select parameters and hash
                             parameters = params_cell{primary_idx,config_idx};
@@ -318,7 +430,7 @@ if ~skip_simulations
                 % Go through each settings profile
                 for primary_idx = 1:num_primary
                     for config_idx = 1:num_configs
-                        if current_frames > prior_frames(primary_idx,config_idx)
+                        if current_frames > prior_frames(primary_idx,config_idx) && ~is_sufficient(primary_idx,config_idx)
 
                             % Select parameters
                             parameters = params_cell{primary_idx,config_idx};
@@ -408,7 +520,43 @@ if ~skip_simulations
                 end
             end
 
+            % Adaptive stability check
+            if enable_adaptive
+                for primary_idx = 1:num_primary
+                    for config_idx = 1:num_configs
+                        if ~is_sufficient(primary_idx, config_idx)
+                            paramHash = hash_cell{primary_idx, config_idx};
+                            % Read metrics_aux from main table
+                            aux = [];
+                            try
+                                loc = find(string(T.param_hash) == paramHash, 1);
+                                if ~isempty(loc) && ismember('metrics_aux', T.Properties.VariableNames) ...
+                                        && ~ismissing(T.metrics_aux(loc)) && ~isempty(string(T.metrics_aux(loc)))
+                                    aux = jsondecode(T.metrics_aux{loc});
+                                end
+                            catch
+                                aux = [];
+                            end
+                            [is_stable, ~, ~] = check_stability(aux, data_type, ...
+                                relative_tolerance, min_frames, confidence);
+                            is_sufficient(primary_idx, config_idx) = is_stable;
+                        end
+                    end
+                end
+
+                % Print convergence summary
+                fprintf("--- Iteration %d/%d (%d frames) ---\n", iter, num_iters, current_frames);
+                fprintf("  %d/%d points sufficient\n", ...
+                    sum(is_sufficient(:)), numel(is_sufficient));
+
+                if all(is_sufficient(:))
+                    fprintf("All data points converged. Stopping early at iteration %d.\n", iter);
+                    all_done = true;
+                end
+            end
+
         end
+    end
     end
 end
 
