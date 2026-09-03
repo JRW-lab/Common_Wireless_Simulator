@@ -159,7 +159,7 @@ for frame = 1:new_frames
                 H_bar = D * G_F;
                 w_bar = D * z_F;
                 r_bar = H_bar * s + w_bar;
-                x_hat = bdfe(r_bar.',H_bar,N0,S);
+                x_hat = bdfe_OFDM(r_bar.',H_bar,N0,S);
                 RX_data = demodulator(x_hat,S);
 
             else % Quasi-static fading

@@ -1,8 +1,14 @@
-function [decoded_hard, decoded_soft] = bdfe(data_rcv, encoder, noise_variance, S)
-% function decoded = bdfe(data_rcv, encoder, noise_variance, N_bit_per_sym)
-%   Block Decision Feedback Equalizer
+function [decoded_hard, decoded_soft] = bdfe_OFDM(data_rcv, encoder, noise_variance, S)
+% function decoded = bdfe_OFDM(data_rcv, encoder, noise_variance, N_bit_per_sym)
+%   Block Decision Feedback Equalizer (OFDM, hard-decision only)
 %	Stamoulis TCOM 2001
 %
+% Renamed from bdfe.m: this filename collided with the unrelated 8-arg
+% turbo/soft-decision Comm Functions/TX RX Functions/bdfe.m (used by
+% sim_fun_OTFS.m). MATLAB path order made TX RX Functions/bdfe.m always
+% shadow this one, so sim_fun_OFDM_v2.m's "DD-BDFE" receiver was silently
+% calling the wrong function and crashing with "Not enough input
+% arguments."
 
 mod_level = length(S);
 
