@@ -21,7 +21,9 @@ end
 res = 10;
 Es = 1;
 Eb = Es / log2(M_ary);
-N_iters = 3;
+if ~exist('N_iters','var')
+    N_iters = 3;
+end
 syms_per_f = M*N*U;
 N0 = Eb / (10^(EbN0 / 10)) * ((N+2)/N);
 
@@ -82,10 +84,7 @@ for frame = 1:new_frames
     % Equalize received signal
     switch receiver_name
         case "CMC-MMSE"
-            tStartRX = tic;
-            [x_hat,iters_vec(frame)] = OTFS_pulse_equalizer_AWGN(yDD,HDD,N*U,M,L2,-L1,Es,N0,S,N_iters);
-            t_RXfull_vec(frame) = toc(tStartRX);
-            t_RXiter_vec(frame) = t_RXfull_vec(frame);
+            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_CMC_MMSE_AWGN(yDD,HDD,N*U,M,L2,-L1,Es,N0,S,N_iters);
         case "MMSE"
             [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(yDD,HDD,Es,N0);
         otherwise
