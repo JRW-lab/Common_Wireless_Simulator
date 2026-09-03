@@ -52,7 +52,7 @@ addpath('Comm Functions/TX RX Functions');
 3. If a sufficient number of frames is not already simulated, `sim_save.m` is run for a specific system with a set of defined parameters. (A minimum of one simulated frame per simulation point is needed to render figures.)
 4. Based on the `system_name` in parameters, a simulation file is selected and additional frames are run.
 5. Steps 3-4 are repeated until all configurations have the sufficient number of frames for figure rendering.
-6. `gen_table.m`, `gen_figure_v2.m` or `gen_hex_layout.m` is run to generate a figure/table and save.
+6. `gen_table.m`, `gen_figure.m` or `gen_hex_layout.m` is run to generate a figure/table and save.
 
 ## Configuration Setup
 
