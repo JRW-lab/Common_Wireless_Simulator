@@ -13,3 +13,6 @@ configurations.m
 
 % Local MySQL credentials - never commit, machine-specific
 mysql_local.json
+
+% Superseded saved_profiles backup - not synced with Github
+saved_profiles_OLD.m
