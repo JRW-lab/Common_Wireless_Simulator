@@ -82,6 +82,11 @@ data_var(data_var == 0) = 1e-5;
 % correlation matrix of AWGN
 Rnn = noise_var*eye(N_rx_sym);
 
+% encoder'*encoder does not depend on k (encoder is fixed for this whole
+% call) - computed once here instead of recomputed via a full matrix
+% product on every pass of the k-loop below.
+EtE = encoder' * encoder;
+
 decoded_soft = zeros(2, N_tx_sym);
 decoded_hard = zeros(N_tx_sym, 1);
 %decoded_hard(N_tx_sym) = modulator(demodulator(decoded_soft(N_tx_sym), M_ary), M_ary);
@@ -113,7 +118,7 @@ for k = N_tx_sym:-1:1
 
     % formulate the feedbackword matrix
     % U'*D*U = Ree, where U is upper triangular with unit diagonal
-    Ree = inv_Rss + 1/noise_var*eye(N_tx_sym)*(encoder'*encoder);
+    Ree = inv_Rss + EtE/noise_var;
     Ree(logical(eye(size(Ree)))) = abs(diag(Ree));
     U_temp = chol(Ree);
     D = diag(diag(U_temp).^2);
