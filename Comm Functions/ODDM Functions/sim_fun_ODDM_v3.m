@@ -15,7 +15,9 @@ end
 % Define parameters
 res = 10;
 Es = 1;
-N_iters = 3;
+if ~exist('N_iters','var')
+    N_iters = 3;
+end
 syms_per_f = M*N;
 L1 = Q + 1;
 L2 = Q + 1 + floor(2510*10^(-9) / Ts);
