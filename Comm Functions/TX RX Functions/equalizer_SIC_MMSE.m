@@ -15,6 +15,21 @@ s_hat = zeros(M,N,N_iters);
 r_block = reshape(r,M,N);
 F_N = gen_DFT(N);
 
+% Precompute the iteration-invariant MMSE row vector w_MMSE for every
+% (k,n) layer/time-symbol pair. w_MMSE depends only on the channel (via
+% G_n/H_e/g) and N0/Es - never on the SIC iteration or the ISI-cancelled
+% residual - so it is computed once here instead of being recomputed
+% (with a redundant pinv call) on every iteration below.
+possible_w_MMSE = zeros(M-L,N,L+1);
+for k = 0:M-L-1
+    for n = 0:N-1
+        G_n = G((n*M+1):((n+1)*M),(n*M+1):((n+1)*M));
+        H_e = G_n((1+k):(L+1+k),(1+k):(L+1+k));
+        g = H_e(:,1);
+        possible_w_MMSE(k+1,n+1,:) = g' * pinv(H_e * H_e' + N0/Es * eye(L+1));
+    end
+end
+
 % Loop through each iteration
 iter_runtimes = [];
 for iter = 1:N_iters
@@ -34,10 +49,6 @@ for iter = 1:N_iters
             % Select L+1 received elements
             r_n = r_block((k+1):(L+1+k),n+1);
 
-            % Select sub-channel for (k+1)-th layer, and its first column
-            H_e = G_n((1+k):(L+1+k),(1+k):(L+1+k));
-            g = H_e(:,1);
-
             % Perform interference cancelation - complete after first loop
             r_n_tilde = r_n;
             for m = 0:k-1 % Remove ISI using this iteration's estimate
@@ -51,8 +62,8 @@ for iter = 1:N_iters
                 end
             end
 
-            % Generate MMSE matrix for i-th element
-            w_MMSE = g' * pinv(H_e * H_e' + N0/Es * eye(L+1));
+            % Retrieve the precomputed MMSE row vector for this layer/time-symbol
+            w_MMSE = reshape(possible_w_MMSE(k+1,n+1,:), 1, L+1);
 
             % Do soft equalization for s
             s_hat(k+1,n+1,iter) = w_MMSE * r_n_tilde;

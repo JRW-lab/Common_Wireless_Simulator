@@ -3,8 +3,12 @@ function [x_hat,iters,t_RXiter,t_RXfull] = equalizer_CMC_MMSE_AWGN(y_tilde,H_til
 % Start runtime
 tStartRX = tic;
 
-% Find all possible Lambda_n matrices and Theta_n matrices
-possible_Lambda_n = zeros(N*M,N);
+% Find all possible Lambda_n matrices and Theta_n matrices, and the MMSE
+% matrix W_n they produce. W_n depends only on Lambda_n, N0 and Es - none
+% of which change across equalizer iterations - so it is computed once
+% here per block n and reused every iteration, instead of being
+% recomputed (with a redundant pinv call) on every pass below.
+possible_W_n = zeros(N*M,N);
 for n = 0:M-1
     Lambda_n = zeros(N);
     for l = Ln:Lp
@@ -12,7 +16,7 @@ for n = 0:M-1
         Lambda_n_add = selected_H_block1' * selected_H_block1;
         Lambda_n = Lambda_n + Lambda_n_add;
     end
-    possible_Lambda_n((n*N)+1:(n+1)*N,:) = Lambda_n;
+    possible_W_n((n*N)+1:(n+1)*N,:) = Lambda_n' * pinv(Lambda_n*Lambda_n' + (N0/Es)*Lambda_n);
 end
 
 % Predefine variables and start iterator equalizer
@@ -64,11 +68,8 @@ while iters < N_iters && flag_detector
             gamma_n = gamma_n + selected_H_block1' * y_hat_l;
         end
 
-        % Select Lambda_n from possible matrices
-        Lambda_n = possible_Lambda_n((n*N)+1:(n+1)*N,:);
-
-        % Create MMSE matrix for iterative solver
-        W_n = Lambda_n' * pinv(Lambda_n*Lambda_n' + (N0/Es)*Lambda_n);
+        % Select the precomputed MMSE matrix for this block (iteration-invariant)
+        W_n = possible_W_n((n*N)+1:(n+1)*N,:);
 
         % Create x_hat for current block and push to stack
         x_hat_n = W_n * gamma_n;
