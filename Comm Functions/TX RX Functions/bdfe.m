@@ -91,53 +91,90 @@ decoded_soft = zeros(2, N_tx_sym);
 decoded_hard = zeros(N_tx_sym, 1);
 %decoded_hard(N_tx_sym) = modulator(demodulator(decoded_soft(N_tx_sym), M_ary), M_ary);
 
+% ---------------------------------------------------------------------
+% Rank-1-update precomputation. For every k, Rss only differs from
+% diag(data_var) at position k (set to 1 there), so both
+% Ree(k) = inv_Rss(k) + EtE/noise_var and Rnn+encoder*Rss(k)*encoder'
+% are each a COMMON, k-independent base matrix plus a single rank-1
+% correction at position/column k. This lets the Cholesky factor (via
+% cholupdate, O(N^2)) and the MMSE matrix's inverse (via
+% Sherman-Morrison, O(N^2)) be derived per k from one base
+% decomposition/inverse computed once, instead of a full O(N^3)
+% chol()/matrix-solve recomputed from scratch for every one of the
+% N_tx_sym values of k. Verified equivalent via
+% scratchpad/validate_rank1_math.m before this rewrite.
+data_var_floored = data_var;
+data_var_floored(data_var_floored < 1e-6) = 1e-6;
+
+c_vec = 1 - 1./data_var_floored;      % Ree(k) = Ree_base + c_vec(k)*e_k*e_k'
+d_vec = 1 - data_var_floored;         % M(k)   = M_base   + d_vec(k)*v_k*v_k', v_k = encoder(:,k)
+
+Ree_base = diag(1./data_var_floored) + EtE/noise_var;
+Ree_base(logical(eye(size(Ree_base)))) = abs(diag(Ree_base));
+R_base = chol(Ree_base);
+
+M_base = Rnn + (encoder .* data_var_floored) * encoder';
+Minv_base = inv(M_base);
+W = Minv_base * encoder;                      % W(:,k) = Minv_base*encoder(:,k)
+alpha_vec = real(sum(conj(encoder).*W,1)).';   % alpha_vec(k) = encoder(:,k)'*W(:,k)
+% ---------------------------------------------------------------------
 
 d0_mat = zeros(N_bit_per_sym, N_half_state);
 d1_mat = zeros(N_bit_per_sym, N_half_state);
 for k = N_tx_sym:-1:1
 
-    % start of matrix formulation
-    % correlation matrix of the tx symbols
-    var_vec = data_var;
-    var_vec(k) = 1;
     mean_vec = data_mean;
     mean_vec(k) = 0;
-    Rss = diag(var_vec);
-    % debug
-    var_vec(var_vec < 1e-6) = 1e-6;
-    inv_Rss = diag(1./var_vec);
 
+    % Cholesky row k via rank-1 update/downdate of the base factor,
+    % falling back to a direct from-scratch decomposition of Ree(k) in
+    % the rare case the update/downdate is numerically unsafe.
+    c_k = c_vec(k);
+    if c_k == 0
+        R_k = R_base;
+    else
+        x = zeros(N_tx_sym,1);
+        x(k) = sqrt(abs(c_k));
+        try
+            if c_k > 0
+                R_k = cholupdate(R_base, x, '+');
+            else
+                R_k = cholupdate(R_base, x, '-');
+            end
+            if ~isfinite(R_k(k,k)) || ~isreal(R_k(k,k)) || R_k(k,k) <= 0
+                error('bdfe:choldowndate','unsafe update');
+            end
+        catch
+            Ree_k = Ree_base;
+            Ree_k(k,k) = Ree_k(k,k) + c_k;
+            R_k = chol(Ree_k);
+        end
+    end
+    r_kk = R_k(k,k);
+    U_row = R_k(k,:) / r_kk;   % U(k,:): unit-diagonal normalized row
+    Dkk = r_kk^2;              % D(k,k)
 
-    % MMSE matrix
-    % if rcond(Rnn+encoder*Rss*encoder') > 1e-2
-    % 	MMSE_mat = Rss*encoder'/(Rnn+encoder*Rss*encoder');
-    % else
-    % 	MMSE_mat = Rss*encoder'*pinv(Rnn+encoder*Rss*encoder');
-    % end
-    MMSE_mat = (Rss * encoder') * ((Rnn + encoder*Rss*encoder') \ eye(N_rx_sym));
+    % MMSE row via Sherman-Morrison, computed as a chain of
+    % matrix-vector products so a full N_tx_sym x N_rx_sym MMSE matrix
+    % is never formed (U(k,k) is always 1 by construction, so the
+    % Feedback_mat(k,k) multiplier from the original code is omitted -
+    % multiplying by 1 exactly, not an approximation).
+    var_row = data_var_floored;
+    var_row(k) = 1;
+    p_k = (U_row .* var_row) * encoder';
 
-    % formulate the feedbackword matrix
-    % U'*D*U = Ree, where U is upper triangular with unit diagonal
-    Ree = inv_Rss + EtE/noise_var;
-    Ree(logical(eye(size(Ree)))) = abs(diag(Ree));
-    U_temp = chol(Ree);
-    D = diag(diag(U_temp).^2);
-    norm_mat = diag(U_temp)*ones(1, N_tx_sym);
-    U = U_temp./norm_mat;
+    d_k = d_vec(k);
+    w_k = W(:,k);
+    denom = 1 + d_k*alpha_vec(k);
+    Feedforward_row = (Minv_base*p_k' - (d_k/denom)*w_k*(w_k'*p_k'))';
 
-    % Feedback_mat = U - eye(N_tx_sym);
-    Feedback_mat = U;
-    Feedforward_mat = U*MMSE_mat;
-    % end of matrix formulation
-
-
-    data_ff(k) = Feedforward_mat(k, :)*(data_rcv.'-encoder*mean_vec.');
-    temp_value = data_ff(k)-Feedback_mat(k, k+1:end)*(decoded_hard(k+1:end)-data_mean(k+1:end).');
-    dec_vec = -abs(temp_value-Feedback_mat(k, k)*syms.').^2*D(k, k);
+    data_ff(k) = Feedforward_row*(data_rcv.'-encoder*mean_vec.');
+    temp_value = data_ff(k)-U_row(k+1:end)*(decoded_hard(k+1:end)-data_mean(k+1:end).');
+    dec_vec = -abs(temp_value-syms.').^2*Dkk;
     % find the LL of '0' and '1'
     for m = 1:N_bit_per_sym
-        d0_mat(m, :) = -abs(temp_value-Feedback_mat(k, k)*group0(m, :)).^2*D(k, k);
-        d1_mat(m, :) = -abs(temp_value-Feedback_mat(k, k)*group1(m, :)).^2*D(k, k);
+        d0_mat(m, :) = -abs(temp_value-group0(m, :)).^2*Dkk;
+        d1_mat(m, :) = -abs(temp_value-group1(m, :)).^2*Dkk;
     end
 
     for m = 1:N_bit_per_sym
