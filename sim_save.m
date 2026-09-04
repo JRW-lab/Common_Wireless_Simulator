@@ -62,7 +62,7 @@ if run_flag
             [metrics_add, frame_data] = sim_fun_TODDM_v3(new_frames,parameters);
         case "ODDM"
             if isfield(parameters,'receiver_name') && parameters.receiver_name == "SIC-MMSE"
-                [metrics_add, frame_data] = sim_fun_ODDM_SIC_MMSE(new_frames,parameters); % time-domain SIC-MMSE, CP-Free only
+                [metrics_add, frame_data] = sim_fun_ODDM_SIC_MMSE(new_frames,parameters); % time-domain SIC-MMSE via Kronecker-DFT channel recovery, CP-Free only
             else
                 [metrics_add, frame_data] = sim_fun_ODDM_v3(new_frames,parameters);
             end

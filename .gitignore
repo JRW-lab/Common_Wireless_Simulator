@@ -16,3 +16,6 @@ mysql_local.json
 
 % Superseded saved_profiles backup - not synced with Github
 saved_profiles_OLD.m
+
+% Cross-instance investigation notes - machine-local scratch, not for Github
+AMBIGUITY_TABLE_AUDIT.md
