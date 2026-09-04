@@ -31,7 +31,7 @@ p.configs = {
     struct('vel',120)
     struct('vel',500)
     };
-p.delete_configs = [];
+p.delete_configs = [1,2,3];
 p.legend_vec = {
     "40 km/hr"
     "120 km/hr"
