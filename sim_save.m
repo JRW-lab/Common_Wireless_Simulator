@@ -128,9 +128,22 @@ if run_flag
                 end
             end
             if save_data.save_excel
-                T = mysql_load(conn,table_name,"*");
-                excel_path = save_data.excel_path;
-                writetable(T, excel_path);
+                % Non-fatal: a full MySQL write already succeeded above, so
+                % this local Excel snapshot is a convenience export, not the
+                % source of truth. Without this try/catch, a locked/open
+                % excel_path (e.g. the file open in Excel) throws here
+                % unguarded - unlike the mysql_write calls above, which
+                % already retry on failure - propagating all the way to the
+                % GUI's error handler and, since Ignore Errors defaults on,
+                % flashing an error and retrying every 5s indefinitely.
+                try
+                    T = mysql_load(conn,table_name,"*");
+                    excel_path = save_data.excel_path;
+                    writetable(T, excel_path);
+                catch ME
+                    warning("sim_save:excelSnapshotFailed", ...
+                        "Local Excel snapshot write failed (MySQL write succeeded): %s", ME.message);
+                end
             end
         case "local"
             if save_data.save_excel

@@ -310,13 +310,23 @@ for primary_idx = 1:num_primary
                         delete_command = sprintf("DELETE FROM %s WHERE param_hash = '%s';",table_name,paramHash);
                         exec(conn, delete_command);
                     elseif save_data.save_excel
-                        table_locs = 1 - (string(T.param_hash) == paramHash);
-                        T = T(logical(table_locs),:);
+                        % T has no param_hash variable at all (not just no
+                        % matching rows) the first time this profile is run
+                        % with a fresh/nonexistent excel_path - nothing to
+                        % delete yet in that case.
+                        try
+                            table_locs = 1 - (string(T.param_hash) == paramHash);
+                            T = T(logical(table_locs),:);
+                        catch
+                        end
                     end
                 case "local"
                     if save_data.save_excel
-                        table_locs = 1 - (string(T.param_hash) == paramHash);
-                        T = T(logical(table_locs),:);
+                        try
+                            table_locs = 1 - (string(T.param_hash) == paramHash);
+                            T = T(logical(table_locs),:);
+                        catch
+                        end
                     elseif save_data.save_mysql
                         delete_command = sprintf("DELETE FROM %s WHERE param_hash = '%s';",table_name,paramHash);
                         exec(conn, delete_command);
