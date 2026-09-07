@@ -7,8 +7,15 @@ elseif shape == "sinc"
     alpha = 1;
 end
 
-% Define file and folder names
-file_name = sprintf('DD_table_N%d_M%d_T%d,Fc%d_v%d_%s_a%.2f_Q%d_%dres',N,M,T,Fc,v,shape,alpha,Q,res);
+% Define file and folder names. The "GL" tag identifies tables built with
+% the current Gauss-Legendre-quadrature DD_cross_ambig.m - without a
+% method tag here, a table cached under the old Riemann-sum integrator
+% would silently collide with (and be indistinguishable from) one built
+% by a newer integration method sharing the same (N,M,T,Fc,v,shape,alpha,
+% Q,res), since none of those parameters describe the integration method
+% itself. Bump this tag any time DD_cross_ambig.m's own integration
+% method changes again, so old and new tables can never collide.
+file_name = sprintf('DD_table_GL_N%d_M%d_T%d,Fc%d_v%d_%s_a%.2f_Q%d_%dres',N,M,T,Fc,v,shape,alpha,Q,res);
 folder_name = 'Pre-rendered Lookup Tables/ODDM DD Cross-Ambiguity Tables';
 full_path = folder_name + "/" + file_name + ".mat";
 

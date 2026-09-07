@@ -66,8 +66,13 @@ ambig_f_locs = (k-n).*F0 - v_i;
 % ambig_inst = ambig_vals(linear_indices);
 
 %%% More efficient way to find ambiguity values
+% 'spline' interpolation (vs. the table's own grid spacing/'linear') was
+% verified (AMBIGUITY_TABLE_AUDIT.md) to give a small, real, paired BER
+% improvement (~3% at Profile 1's v=40/EbN0=8dB config, 2000 frames) at
+% zero extra table-build cost, by capturing curvature within each grid
+% cell instead of a piecewise-linear approximation.
 ambig_inst = interp2(ambig_f_range, ambig_t_range, ambig_vals, ...
-                     ambig_f_locs, ambig_t_locs, 'linear', 0);
+                     ambig_f_locs, ambig_t_locs, 'spline', 0);
 
 % Define all elements of h summation, then sum across 2nd dimension
 h_sum = exp(-1j.*2.*pi.*n.*m./(N.*M)) .* Phi_i .* exp(1j.*2.*pi.*(v_i + n.*F0).*(l.*Ts-tau_i+t_offset)) .* ambig_inst;

@@ -14,13 +14,27 @@ function Apg = DD_cross_ambig(t,f,N,M,T,shape,alpha,Q,res)
 % 7. alpha:     enter value of roll-off factor
 %                   (unused if "rrc" not selected)
 % 8. Q:         enter number of sample periods before time-domain cutoff
-% 9. res:       enter the resolution of each integration, where dt=Ts/res
+% 9. res:       number of Gauss-Legendre quadrature nodes used per smooth
+%               sub-interval when integrating the elementary-pulse
+%               ambiguity function A_a(t,f) (see ambig_a_GL.m). This
+%               replaces a fixed-step Riemann sum (dt=Ts/res) with
+%               kink-split Gauss-Legendre quadrature, which converges far
+%               faster - res=10 here is already accurate to ~1e-7 relative
+%               error against an independently-verified reference (vs.
+%               15-68% relative error the old Riemann sum had at res=10
+%               near a pulse's own truncation edges). Kept as the same
+%               parameter name/position for backward compatibility with
+%               existing callers (e.g. gen_DD_cross_ambig_table.m).
 %
 % Output:       a delay-Doppler domain cross ambiguity value.
 %
 % Note: This function operates with scalar inputs for (t,f)
 %
 % Coded by Jeremiah Rhys Wimer, 2/26/2025
+% Riemann-sum Aa integration replaced with kink-split Gauss-Legendre
+% quadrature (ambig_a_GL.m), JRW 9/2026 - see
+% Common Wireless Simulator/AMBIGUITY_TABLE_AUDIT.md for the investigation
+% that identified the Riemann sum's edge inaccuracy at short Q.
 
 if shape == "ideal"
 
@@ -39,8 +53,6 @@ else
 
     % Define parameters
     Ts = T / M;
-    dt = Ts / res;
-    t_range = 0:dt:Q*Ts;
     Ta = Q*Ts;
 
     % Define exponential summation term
@@ -75,14 +87,10 @@ else
     % Generate integral for ambiguity function of elementary pulse a(t)
     if ambig_bias ~= 0
 
-        % Define TX/RX pulses
-        filter_1 = gen_pulse(t_range-t,shape,Ts,Q,alpha);
-        filter_2 = gen_pulse(t_range,shape,Ts,Q,alpha);
-
-        % Define integration function
-        norm_val = sqrt(sum(abs(filter_2).^2) * dt) * sqrt(N);
-        integral_vec = conj(filter_1 / norm_val) .* (filter_2 / norm_val) .* exp(-1j.*2.*pi.*(t_range-t).*f);
-        Aa = ambig_bias * sum(integral_vec.*dt,"all");
+        % Elementary-pulse ambiguity function A_a(t,f) via kink-split
+        % Gauss-Legendre quadrature (see ambig_a_GL.m for the exact
+        % integration bounds/kink derivation from Eq. (13)).
+        Aa = ambig_bias * ambig_a_GL(t,f,N,Ts,shape,alpha,Q,res);
 
         % Add ambiguity pulse to summation
         Apg = exp_sum * Aa;
