@@ -55,6 +55,48 @@ for i = 1:numel(fields)
     eval([fields{i} ' = parameters.(fields{i});']);
 end
 
+% Channel-estimation method selection: csi_settings is a single nested
+% struct carrying "how is the channel known" (method = "none" -> perfect
+% CSI, the ENTIRE rest of this file, unchanged; method = "DD-RELAX" ->
+% delegate to the pilot-frame/DD-RELAX/estimated-CSI path) plus that
+% method's own settings, so a profile can switch between perfect-CSI and
+% channel-estimation cases by changing exactly one field rather than a
+% scattered set of them. Absent entirely (Profile 1/2/3's existing
+% default_parameters, untouched) is equivalent to method="none" - this
+% keeps their param_hash and all already-accumulated data exactly as-is.
+if ~isfield(parameters,'csi_settings')
+    csi_settings = struct('method',"none");
+else
+    csi_settings = parameters.csi_settings;
+end
+if csi_settings.method == "DD-RELAX"
+    % RETIRED 2026-09-18. This used to delegate to
+    % sim_fun_ODDM_DDRELAX_SICMMSE, which lived in the (now removed)
+    % "Comm Functions/ODDM Functions/DD-RELAX/" folder -- CWS's own
+    % independently-written DD-RELAX implementation. That folder was
+    % retired so CWS holds ONE DD-RELAX implementation rather than two;
+    % it is archived byte-identical, with a README explaining why and a
+    % measured accuracy comparison, at:
+    %   ODDM estimation paper/reference/cws-ddrelax-independent-impl/
+    % No profile referenced this branch when it was removed, so nothing
+    % that previously worked has stopped working.
+    %
+    % DD-RELAX estimated CSI now lives on the PT-MMSE path instead --
+    % receiver_name="PT-MMSE" with the same csi_settings struct -- because
+    % the paper's Sec. V specifies PT-MMSE as its detector. Erroring
+    % loudly here rather than silently doing something else: a profile
+    % that asks for SIC-MMSE + DD-RELAX is asking for a combination this
+    % project no longer implements, and should be told so.
+    error("sim_fun_ODDM_SIC_MMSE:ddrelaxRetired", ...
+        ['DD-RELAX + SIC-MMSE was retired on 2026-09-18. Use ' ...
+         'receiver_name="PT-MMSE" with the same csi_settings struct ' ...
+         '(the paper Sec. V detector), or restore the archived copy from ' ...
+         '"ODDM estimation paper/reference/cws-ddrelax-independent-impl/".']);
+elseif csi_settings.method ~= "none"
+    error("sim_fun_ODDM_SIC_MMSE:unknownCsiMethod", ...
+        "Unrecognized csi_settings.method: %s",csi_settings.method);
+end
+
 if CP
     error("SIC-MMSE for ODDM requires CP-Free mode - zero-padding (not a cyclic prefix) is what makes the channel causal here.")
 end
@@ -161,14 +203,15 @@ for frame = 1:new_frames
     HDD_dm(perm,perm) = HDD_native;
     Ht = K' * HDD_dm * K;
 
-    % Block-diagonal channel for the equalizer: it only ever reads its
-    % own diagonal MxM block per time symbol internally, so only the
-    % diagonal blocks matter for G's role in the algorithm. The FULL Ht
-    % (with its own small, genuine cross-time-symbol leakage - verified
-    % >95% on-block-diagonal energy even at 500 km/hr) is used to
-    % generate the received vector, so that leakage is honestly present
-    % as unmodeled interference, exactly like OTFS's own small
-    % near-boundary leakage under a global circshift.
+    % G_full is the true recovered time-domain channel, with its own
+    % small, genuine cross-time-symbol leakage (verified >95%
+    % on-block-diagonal energy even at 500 km/hr). It is used both to
+    % generate the received vector AND (as of 2026-09-09, see
+    % notes/AMBIGUITY_TABLE_AUDIT.md "2026-09-09 follow-up") passed into
+    % equalizer_SIC_MMSE.m so it can cancel that leakage against the
+    % immediately adjacent time-symbol blocks, rather than leaving it as
+    % pure unmodeled interference. G_blk (block-diagonal only) is still
+    % used for the equalizer's own within-block MMSE/SIC structure.
     G_full = Ht;
     G_blk = zeros(syms_per_f);
     for n = 0:N-1
@@ -180,9 +223,10 @@ for frame = 1:new_frames
     w = sqrt(N0/2) * (randn(syms_per_f,1) + 1j*randn(syms_per_f,1));
     y = G_full*s + w;
 
-    % Equalize (unchanged, verbatim-ported time-domain SIC-MMSE)
+    % Equalize (time-domain SIC-MMSE, now cancelling cross-block leakage
+    % against G_full in addition to its original within-block MMSE/SIC)
     [s_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = ...
-        equalizer_SIC_MMSE(y,G_blk,N,M,L,Es,N0,S,sic_iters);
+        equalizer_SIC_MMSE(y,G_blk,N,M,L,Es,N0,S,sic_iters,G_full);
 
     % equalizer_SIC_MMSE.m's own output is already back in the DD domain
     % (Doppler-major) - undo only the delay-major/Doppler-major

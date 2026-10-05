@@ -1,4 +1,10 @@
-# Ignore unneeded folders
+# NOTE (2026-09-18): comment lines in .gitignore MUST start with '#'.
+# This file previously used '%' (MATLAB's comment character) for several
+# headings -- git does not treat those as comments, it treats them as
+# PATTERNS. They matched nothing real so nothing broke, but the file was
+# lying about which lines were inert. Fixed throughout.
+
+# --- Regenerable / bulky output folders ---
 Figures/
 Final Results/
 Data/
@@ -6,16 +12,103 @@ Legacy/
 Pre-rendered Lookup Tables/
 Logs/
 
-% Ignore specific files
-test.m
+# --- Machine-local scratch, experiments and superseded code ---
+# notes/   : cross-instance investigation write-ups (audits, comparisons).
+#            Kept out of the public repo deliberately -- they are working
+#            notes between Claude sessions, not documentation for users.
+#            README.md stays tracked at the repo root.
+# archive/ : superseded or one-off code kept for reference, not for use.
+notes/
+archive/
 configurations.m
 *.asv
 
-% Local MySQL credentials - never commit, machine-specific
+# --- Local MySQL credentials - never commit, machine-specific ---
 mysql_local.json
 
-% Superseded saved_profiles backup - not synced with Github
-saved_profiles_OLD.m
+# --- Regenerable MATLAB derived data ---
+# build_ctx.m (DD-RELAX-paper) disk-caches the ambiguity table and atom
+# dictionary here, keyed by the grid-affecting config. Each file is tens of
+# MB and regenerates automatically in ~65-75s per config. Same reason the
+# sibling project's sim/cache is excluded from Syncthing.
+Comm Functions/ODDM Functions/cache/
 
-% Cross-instance investigation notes - machine-local scratch, not for Github
-AMBIGUITY_TABLE_AUDIT.md
+# --- Cross-machine batch-collection runners (internal tooling) ---
+collectors/
+
+# --- In-development superimposed-pilot DD-RELAX (DD-RELAX-SI) work ---
+# Added 2026-10-03 by explicit user instruction: this algorithm family is
+# NOT finalized and is NOT to be uploaded to the repo for now. It is also
+# deliberately exempt from the portfolio-wide "every estimator ships with
+# a flops_*.m + References/*.lean complexity derivation" policy until the
+# algorithms settle -- deriving a FLOP count against a moving design would
+# just produce a number that goes stale. Revisit BOTH exclusions together
+# once the design is final.
+#
+# Covers the superimposed-pilot variants (SI / SI-DA / SI-GLS / SI-OP),
+# the narrow-guard DD-RELAX-L spin-off, and the shared DD-RELAX-paper
+# estimator folder they all depend on (dd_relax.m carries the in-progress
+# decision-directed full-grid refinement and the fg_trace diagnostic hook;
+# the folder also holds the sbl_*.m experiments, likewise unfinished).
+# None of these paths was ever tracked, so this is purely preventative.
+Comm Functions/ODDM Functions/DD-RELAX-paper/
+Comm Functions/ODDM Functions/sim_fun_ODDM_DDRELAXSI*.m
+Comm Functions/ODDM Functions/sim_fun_ODDM_DDRELAXL_PTMMSE.m
+
+# =====================================================================
+# Debug / diagnostic artefacts -- added 2026-10-05 while preparing the
+# repo for a public GitHub push. Everything below is either machine-local
+# state, run output, or source that explicitly declares itself
+# not-for-production. Classified by evidence (file headers and reference
+# counts), not by guesswork -- see each note.
+# =====================================================================
+
+# --- Editor / assistant session state (machine-local) ---
+.claude/
+
+# --- Run logs. `Logs/` is already excluded above; this is the other
+#     naming used by the Figure 7 relay collection runs. ---
+logs_*/
+
+# --- Sources that declare themselves diagnostic-only in their OWN
+#     headers. Both are real, working code that must NOT ship as part of
+#     the library, because a user who found them would reasonably assume
+#     they were production paths:
+#       gen_HDD_direct_slowref.m      "VERIFICATION REFERENCE ONLY ...
+#                                      Not for production use."
+#       sim_fun_ODDM_OMPPINV_PTMMSE.m "*** DIAGNOSTIC ONLY -- NEVER WIRE
+#                                      THIS INTO A PROFILE OR COLLECT
+#                                      IT. ***"
+Comm Functions/ODDM Functions/gen_HDD_direct_slowref.m
+Comm Functions/ODDM Functions/sim_fun_ODDM_OMPPINV_PTMMSE.m
+
+# --- Dead DT-MUSIC exploration variants. Each is a suffixed copy of
+#     sim_fun_ODDM_DTMUSIC_PTMMSE.m from the estimator-tuning work, and
+#     NONE is referenced by any profile, by the sim_fun_ODDM_PTMMSE
+#     dispatcher, or by any other file (checked: 0 inbound references
+#     each). The two LIVE DT-MUSIC files -- sim_fun_ODDM_DTMUSIC_PTMMSE.m
+#     (2 refs) and sim_fun_ODDM_DTMUSICW_PTMMSE.m (5 refs, the
+#     "DT-MUSIC-WIN" Figure 7 baseline) -- are deliberately NOT listed
+#     here and still ship. Listed individually rather than as a glob so a
+#     future real DT-MUSIC variant is not silently hidden.
+Comm Functions/ODDM Functions/sim_fun_ODDM_DTMUSIC2_PTMMSE.m
+Comm Functions/ODDM Functions/sim_fun_ODDM_DTMUSICD_PTMMSE.m
+Comm Functions/ODDM Functions/sim_fun_ODDM_DTMUSICG_PTMMSE.m
+Comm Functions/ODDM Functions/sim_fun_ODDM_DTMUSICGN_PTMMSE.m
+Comm Functions/ODDM Functions/sim_fun_ODDM_DTMUSICO_PTMMSE.m
+Comm Functions/ODDM Functions/sim_fun_ODDM_DTMUSICPL_PTMMSE.m
+
+# --- Reference PDFs for the in-development superimposed-pilot work.
+#     Excluded for the same reason as its source (see the DD-RELAX-SI
+#     block above): that line of work is not being published yet.
+#     Reference PDFs in References/ itself are already tracked and keep
+#     shipping -- this is only the sub-folder.
+References/Superimposed Pilot DD-RELAX/
+
+# --- Generic scratch patterns, so ad-hoc debugging copies never need a
+#     new rule here. *.asv is already covered further up. ---
+*_backup.m
+*_slowref.m
+*_prefix.m
+scratch/
+tmp/
