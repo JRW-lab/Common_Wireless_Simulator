@@ -191,10 +191,10 @@ if run_flag
         case "mysql"
             if save_data.save_mysql
                 try
-                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux);
+                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux,new_aux);
                 catch
                     conn = mysql_ensure_conn(conn,dbname);
-                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux);
+                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux,new_aux);
                 end
             end
             if save_data.save_excel
@@ -222,10 +222,10 @@ if run_flag
             end
             if save_data.save_mysql
                 try
-                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux);
+                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux,new_aux);
                 catch
                     conn = mysql_ensure_conn(conn,dbname);
-                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux);
+                    mysql_write(conn,table_name,parameters,n_eff,metrics_add,false,metrics_aux,new_aux);
                 end
             end
     end
