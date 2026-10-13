@@ -102,12 +102,15 @@ function [all_profiles,profile_names] = saved_profiles()
 %   * ABSENT IS NOT THE SAME AS DEFAULT. Omitting csi_settings means perfect
 %     CSI; csi_settings = struct('method',"none") behaves the same but
 %     hashes differently.
-%   * PLACEMENT MATTERS. parameters.NGS and parameters.csi_settings.NGS are
-%     different fields and hash differently (same for gamma_p). Convention
-%     here: a SWEPT gamma_p / NGS goes top level and is left out of
-%     csi_settings; a FIXED one goes inside csi_settings. The sim functions
-%     error if one appears in both places. See
-%     notes/HASH_PLACEMENT_FRAGMENTATION.md.
+%   * PLACEMENT DOES NOT MATTER (since 2026-10-12). The key is taken over
+%     flatten_params(parameters): csi_settings.X and a top-level X hash the
+%     same, as do ldpc_settings.X and a top-level ldpc_X. So a sweep can put
+%     Pmax at top level and still find data a config collected inside
+%     csi_settings. Two limits: only fields the sim_funs read from the top
+%     level may go there (gamma_p, NGS, PiTau, PiNu, Pmax, ldpc_rate, ldpc_N,
+%     ldpc_bp_iters, ldpc_colweight; anything else errors), and a field may
+%     not be defined in both places. collectors/migrate_flat_hash.m re-keyed
+%     the existing rows.
 %   * CODE IS NOT HASHED. When a change alters an estimator's output, add or
 %     bump a version marker in its csi_settings (impl, algo_ver) so new
 %     frames do not blend into the old running average. For the same
