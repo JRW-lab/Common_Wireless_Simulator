@@ -12,7 +12,8 @@ function result = cost_head(settings)
 %                       pipeline and is refused until that exists)
 %     num_frames        timed frames per point; 0 = render the newest
 %                       saved measurement instead of measuring
-%     use_parallel      must be false (see below)
+%     use_parallel      must be false when measuring (see below);
+%                       rendering a saved result ignores it
 %     vis_type          "figure" or "table"
 %     legend_loc        as for sim_head (Y limits are ignored; they are
 %                       set for error rates)
@@ -64,7 +65,7 @@ function result = cost_head(settings)
 % match the profile.
 
 if ~isfield(settings,'status_fcn') || isempty(settings.status_fcn)
-    settings.status_fcn = @(msg, frac) fprintf('%s\n', msg);
+    settings.status_fcn = @(msg, frac) [];   % measure/render print to the console themselves
 end
 stat = string(settings.figure_statistic);
 [kind, stage] = parse_statistic(stat);
@@ -73,22 +74,6 @@ if kind == "flops"
     error("cost_head:flopsNotYet", ...
         ['"%s" is reserved for the analytic FLOP-count pipeline, which ' ...
          'has not been built yet.'], stat);
-end
-
-% ---- refusals: the conditions under which a runtime number is not one
-if isfield(settings,'use_parallel') && settings.use_parallel
-    error("cost_head:parallel", ...
-        ['Runtime cannot be measured with Parallelization on: parallel ' ...
-         'workers compete for the same cores, which is the contamination ' ...
-         'this pipeline exists to avoid. Untick Parallelization and run again.']);
-end
-pool = gcp('nocreate');
-if ~isempty(pool)
-    error("cost_head:poolOpen", ...
-        ['A parallel pool is still open (%d workers), left over from an ' ...
-         'earlier parallel run. Idle workers still hold memory and wake ' ...
-         'for housekeeping. Close it with delete(gcp(''nocreate'')) and ' ...
-         'run again.'], pool.NumWorkers);
 end
 
 cws = fileparts(mfilename('fullpath'));
@@ -121,9 +106,36 @@ if isfield(settings,'num_frames'), num_frames = settings.num_frames; end
 
 if num_frames <= 0
     result = load_latest(cws, pname, [pts.hash]);
-    settings.status_fcn(sprintf('Rendering runtime measured on %s, %s.', ...
-        result.host, string(result.when)), 1);
+    msg = sprintf('Rendering runtime measured on %s, %s.', result.host, string(result.when));
+    fprintf('%s\n  (saved measurement %s; nothing is being timed)\n', msg, result.file);
+    settings.status_fcn(msg, 1);
 else
+    % ---- refusals: the conditions under which a runtime number is not one.
+    % Checked only when MEASURING. Rendering a saved result runs nothing, so
+    % an open pool or a ticked Parallelization box cannot affect it.
+    if isfield(settings,'use_parallel') && settings.use_parallel
+        error("cost_head:parallel", ...
+            ['Runtime cannot be measured with Parallelization on: parallel ' ...
+             'workers compete for the same cores, which is the contamination ' ...
+             'this pipeline exists to avoid. Untick Parallelization and run again.']);
+    end
+    pool = gcp('nocreate');
+    if ~isempty(pool)
+        error("cost_head:poolOpen", ...
+            ['A parallel pool is still open (%d workers), left over from an ' ...
+             'earlier parallel run. Idle workers still hold memory and wake ' ...
+             'for housekeeping. Close it with delete(gcp(''nocreate'')) and ' ...
+             'run again.'], pool.NumWorkers);
+    end
+
+    % Every point is timed over the SAME number of frames, so the arms are
+    % compared on equal footing. Frame targets that vary by error rate are
+    % a collection setting and do not apply here.
+    if isfield(settings,'frame_split') && settings.frame_split
+        error("cost_head:frameSplit", ...
+            ['Runtime is timed over the same number of frames for every ' ...
+             'point. Turn off "Set frames by error rate" and set "All points".']);
+    end
     result = measure(pts, num_frames, pname, settings.status_fcn);
     result.primary_var  = profile.primary_var;
     result.primary_vals = pv;
@@ -178,8 +190,23 @@ if nBusy > 0
          'is collecting, these timings are contaminated. Saved with the result.'], nBusy);
 end
 
+% Console banner: a runtime measurement occupies the machine, and anything
+% else started on it now lands in the numbers.
+fprintf('\n================ RUNTIME MEASUREMENT UNDERWAY ================\n');
+fprintf('  Profile        : %s\n', pname);
+fprintf('  Points         : %d, each timed over %d frame(s) after 1 warm-up frame\n', nPts, nTimed);
+fprintf('  Recording      : estimator and detector wall time per frame\n');
+fprintf('  Machine        : %s, %d computation threads\n', host, maxNumCompThreads);
+if nBusy > 0
+    fprintf('  WARNING        : %d other MATLAB process(es) are using CPU right now\n', nBusy);
+end
+fprintf('  Leave this machine otherwise idle until it finishes.\n');
+fprintf('==============================================================\n');
+
 % Warm-up: one discarded frame per point. Also proves every point's sim_fun
 % reports wall-clock stage times before any real time is spent.
+fprintf('Warm-up: %d frame(s), discarded...\n', nPts);
+t_warm = tic;
 for k = 1:nPts
     status(sprintf('Warm-up %d/%d', k, nPts), 0);
     [~, fd] = run_sim_fun(1, pts(k).par);
@@ -192,6 +219,7 @@ for k = 1:nPts
             pts(k).ic, pname);
     end
 end
+fprintf('Warm-up done in %.0f s. Timing %d round(s) of %d points.\n', toc(t_warm), nTimed, nPts);
 
 est = nan(nPts, nTimed); rx = nan(nPts, nTimed); tot = nan(nPts, nTimed);
 order = zeros(nTimed, nPts);
@@ -212,9 +240,12 @@ for r = 1:nTimed
         rx(k,r)  = fd.t_RXwall(1);
     end
     el = toc(t_all);
-    status(sprintf('Round %d/%d (%d points each) - about %.0f s left', ...
-        r, nTimed, nPts, el/r*(nTimed-r)), r/nTimed);
+    msg = sprintf('Round %d/%d (%d points each) - about %.0f s left', ...
+        r, nTimed, nPts, el/r*(nTimed-r));
+    fprintf('  %s\n', msg);
+    status(msg, r/nTimed);
 end
+fprintf('Runtime measurement finished in %.0f s.\n', toc(t_all));
 
 result = struct();
 result.profile   = pname;
