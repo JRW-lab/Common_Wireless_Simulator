@@ -40,7 +40,8 @@ addpath(fullfile(cwsRoot, 'Common-Wireless-Infrastructure'));
 % can SEE it: a session missing it would silently fall back to nested hashes
 % (the pre-2026-10-12 scheme) and every nested point would read as empty.
 mustBeLocal = {'gen_figure','gen_table','mysql_load','jsonencode_sorted', ...
-               'flatten_params','build_point_params','saved_profiles','sim_head'};
+               'flatten_params','build_point_params','saved_profiles','sim_head', ...
+               'cost_head','run_sim_fun'};
 bad = {};
 for k = 1:numel(mustBeLocal)
     p = which(mustBeLocal{k});
