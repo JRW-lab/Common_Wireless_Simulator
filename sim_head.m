@@ -23,21 +23,50 @@ num_frames = app_settings.num_frames;
 delete_sel = app_settings.delete_sel;
 iteratively_render = app_settings.iteratively_render;
 
-% Adaptive convergence settings (optional)
-enable_adaptive = false;
-relative_tolerance = 0.1;
-min_frames = 100;
-confidence = 0.95;
-if isfield(app_settings, 'enable_adaptive')
-    enable_adaptive = app_settings.enable_adaptive;
+% FRAME TARGETS (2026-10-13). Replaces adaptive stopping.
+%
+% Each point is simulated up to a target frame count. By default that is
+% num_frames for every point. With frame_split on, the target depends on
+% where the point's error rate sits, because a low error rate needs more
+% frames to be measured to the same relative precision:
+%     metric >= frame_split_threshold  ->  frames_high_ber   (e.g. 2000)
+%     metric <  frame_split_threshold  ->  frames_low_ber    (e.g. 5000)
+% frame_split_metric names the stored metric to judge by ("BER" or
+% "BER_info"; for a coded profile raw BER sits near 2e-2 everywhere and
+% never crosses 1e-3). A point with no stored value yet starts on
+% frames_high_ber and is re-judged after every save, so a point whose rate
+% falls below the threshold is extended automatically.
+%
+% WHY ADAPTIVE STOPPING WAS RETIRED. Turning it on ran, before anything
+% else, `UPDATE <table> SET metrics_aux = NULL` with no WHERE clause, wiping
+% the integrity counters of every row of the shared table, and deleted
+% Logs/<table>. A GUI still sending enable_adaptive=true gets a warning and
+% plain frame targets; nothing is reset. check_stability.m is kept for its
+% unit tests.
+if isfield(app_settings, 'enable_adaptive') && app_settings.enable_adaptive
+    warning("sim_head:adaptiveRetired", ...
+        ['Adaptive stopping was retired on 2026-10-13 and is ignored. ' ...
+         'Points run to their frame target; nothing in the table is reset.']);
+end
+frame_split = false;
+frame_split_metric = "BER";
+frame_split_threshold = 1e-3;
+frames_high_ber = num_frames;
+frames_low_ber = num_frames;
+if isfield(app_settings, 'frame_split') && app_settings.frame_split
+    frame_split = true;
+    frame_split_metric = string(app_settings.frame_split_metric);
+    frame_split_threshold = app_settings.frame_split_threshold;
+    frames_high_ber = app_settings.frames_high_ber;
+    frames_low_ber = app_settings.frames_low_ber;
 end
 
 % Per-batch frame logging, DECOUPLED from adaptive mode (2026-09-18).
 %
 % WHY THIS EXISTS AS A SEPARATE FLAG. Frame logging used to be reachable
-% ONLY by turning on enable_adaptive -- and that path is DESTRUCTIVE. The
-% "Clean up adaptive logs at start of run" block further down does two
-% irreversible things before the run starts:
+% ONLY by turning on enable_adaptive -- and that path was DESTRUCTIVE. Its
+% "Clean up adaptive logs at start of run" block (removed 2026-10-13) did two
+% irreversible things before the run started:
 %     rmdir(Logs/<table>, 's')                       % deletes every log
 %     UPDATE <table> SET metrics_aux = NULL          % NO WHERE CLAUSE
 % The second one nulls metrics_aux on EVERY ROW OF THE SHARED TABLE --
@@ -50,21 +79,11 @@ end
 %
 % So: wanting an audit trail must NOT require destroying the existing
 % audit data. Set enable_frame_log to get logs with no reset of anything.
-% enable_adaptive keeps its old all-or-nothing behaviour untouched.
+% (enable_adaptive itself was retired 2026-10-13; see FRAME TARGETS.)
 enable_frame_log = false;
 if isfield(app_settings, 'enable_frame_log')
     enable_frame_log = app_settings.enable_frame_log;
 end
-if isfield(app_settings, 'relative_tolerance')
-    relative_tolerance = app_settings.relative_tolerance;
-end
-if isfield(app_settings, 'min_frames')
-    min_frames = app_settings.min_frames;
-end
-if isfield(app_settings, 'confidence')
-    confidence = app_settings.confidence;
-end
-
 % Optional GUI progress callbacks
 progress_fcn = [];
 if isfield(app_settings, 'progress_fcn')
@@ -91,7 +110,7 @@ save_data.dbname = dbname;
 save_data.excel_folder = 'Data';
 save_data.excel_name = table_name;
 save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".xlsx");
-save_data.enable_logging = enable_adaptive || enable_frame_log;
+save_data.enable_logging = enable_frame_log;
 save_data.log_dir = fullfile('Logs', table_name);
 
 % Set paths and data
@@ -522,12 +541,11 @@ for primary_idx = 1:num_primary
 end
 
 % Non-points are marked as already having infinite frames. Every "does this
-% still need simulating?" test in the loops below is `current_frames >
+% still need simulating?" test in the loops below is `goal >
 % prior_frames(...)`, so Inf makes all of them false WITHOUT those loops
 % (including the parfor, where added conditionals are awkward) needing to
-% know that flat configs exist. min() ignores Inf when finite values are
-% present, so loop_min_frames stays correct too. For a profile with no flat
-% configs this assigns nothing.
+% know that flat configs exist; frame_targets gives non-points an Inf
+% target to match. For a profile with no flat configs this assigns nothing.
 prior_frames(~is_point) = Inf;
 
 % Overwrite old table (Excel only)
@@ -535,40 +553,15 @@ if delete_sel && save_data.save_excel
     writetable(T, save_data.excel_path);
 end
 
-% Clean up adaptive logs at start of run
-if enable_adaptive
-    save_data.enable_logging = true;
-    save_data.log_dir = fullfile('Logs', table_name);
-    if isfolder(save_data.log_dir)
-        rmdir(save_data.log_dir, 's');
-    end
+% Frame logging. The destructive adaptive-mode reset that used to sit here
+% was removed with adaptive stopping on 2026-10-13.
+% Frame logging: no rmdir, no metrics_aux reset.
+% Logs simply append -- write_frame_log takes a frame_idx_start and
+% extends the existing per-hash .mat rather than overwriting it.
+save_data.enable_logging = enable_frame_log;
+save_data.log_dir = fullfile('Logs', table_name);
+if enable_frame_log && ~isfolder(save_data.log_dir)
     mkdir(save_data.log_dir);
-    % Clear metrics_aux from main table
-    if save_data.save_mysql
-        try
-            execute(conn, "UPDATE " + table_name + " SET metrics_aux = NULL");
-        catch
-        end
-    end
-    if save_data.save_excel
-        try
-            T_reset = readtable(save_data.excel_path, 'TextType', 'string');
-            if ismember('metrics_aux', T_reset.Properties.VariableNames)
-                T_reset.metrics_aux(:) = missing;
-                writetable(T_reset, save_data.excel_path);
-            end
-        catch
-        end
-    end
-else
-    % Frame logging WITHOUT adaptive mode: no rmdir, no metrics_aux reset.
-    % Logs simply append -- write_frame_log takes a frame_idx_start and
-    % extends the existing per-hash .mat rather than overwriting it.
-    save_data.enable_logging = enable_frame_log;
-    save_data.log_dir = fullfile('Logs', table_name);
-    if enable_frame_log && ~isfolder(save_data.log_dir)
-        mkdir(save_data.log_dir);
-    end
 end
 
 %% Simulation loop
@@ -590,20 +583,17 @@ if iteratively_render
     tRender = tic;
 end
 
-% Start sim loop
-num_iters = ceil(num_frames / frames_per_iter);
+% Start sim loop. Iterations run until the LARGEST possible target; points
+% with smaller targets stop being scheduled once they reach theirs.
+target_frames = frame_targets(T, hash_cell, is_point, num_frames, frame_split, ...
+    frame_split_metric, frame_split_threshold, frames_high_ber, frames_low_ber);
+frames_max = max([num_frames frames_high_ber frames_low_ber]);
+num_iters = ceil(frames_max / frames_per_iter);
 dq = parallel.pool.DataQueue;
 afterEach(dq, @updateProgressBar);
 if ~isempty(progress_fcn)
     afterEach(dq, progress_fcn);
 end
-loop_min_frames = min(prior_frames,[],"all");
-% Non-points start "sufficient" so the adaptive early-stop test
-% `all(is_sufficient(:))` can still be reached -- otherwise a profile with
-% flat configs could never converge, because cells that are not test points
-% would sit permanently unstable. Identical to false(...) when there are no
-% flat configs.
-is_sufficient = ~is_point; %#ok<NASGU>
 if ~skip_simulations
 
     % Parallel pool is started lazily, the first time there's actually a
@@ -624,10 +614,13 @@ if ~skip_simulations
         if iter < num_iters
             current_frames = iter*frames_per_iter;
         else
-            current_frames = num_frames;
+            current_frames = frames_max;
         end
 
-        if loop_min_frames < current_frames
+        % Per-point goal this iteration: the shared schedule, capped at
+        % the point's own target.
+        goal_frames = min(current_frames, target_frames);
+        if any(prior_frames(:) < goal_frames(:))
             if use_parallel
                 if ~pool_ready
                     if isempty(gcp('nocreate'))
@@ -642,7 +635,8 @@ if ~skip_simulations
                 % Go through each settings profile
                 parfor primary_idx = 1:num_primary
                     for config_idx = 1:num_configs
-                        if current_frames > prior_frames(primary_idx,config_idx) && ~is_sufficient(primary_idx,config_idx)
+                        goal = goal_frames(primary_idx,config_idx);
+                        if goal > prior_frames(primary_idx,config_idx)
 
                             % Select parameters and hash
                             parameters = params_cell{primary_idx,config_idx};
@@ -658,8 +652,8 @@ if ~skip_simulations
                             progress_bar_data.config_idx = config_idx;
                             progress_bar_data.num_primary = num_primary;
                             progress_bar_data.num_configs = num_configs;
-                            progress_bar_data.current_frames = current_frames;
-                            progress_bar_data.num_frames = num_frames;
+                            progress_bar_data.current_frames = goal;
+                            progress_bar_data.num_frames = target_frames(primary_idx,config_idx);
                             send(dq, progress_bar_data);
 
                             % Simulate under current settings.
@@ -677,8 +671,8 @@ if ~skip_simulations
                             % "Error using sim_save (line 149) Invalid or
                             % deleted object." - the sequential branch below
                             % can and does keep passing the real connection.
-                            sim_save(save_data,[],table_name,current_frames,parameters,paramHash);
-                            prior_frames(primary_idx, config_idx) = prior_frames(primary_idx, config_idx) + frames_per_iter;
+                            sim_save(save_data,[],table_name,goal,parameters,paramHash);
+                            prior_frames(primary_idx, config_idx) = goal;
 
                         end
                     end
@@ -688,7 +682,8 @@ if ~skip_simulations
                 % Go through each settings profile
                 for primary_idx = 1:num_primary
                     for config_idx = 1:num_configs
-                        if current_frames > prior_frames(primary_idx,config_idx) && ~is_sufficient(primary_idx,config_idx)
+                        goal = goal_frames(primary_idx,config_idx);
+                        if goal > prior_frames(primary_idx,config_idx)
 
                             % Select parameters
                             parameters = params_cell{primary_idx,config_idx};
@@ -704,13 +699,13 @@ if ~skip_simulations
                             progress_bar_data.config_idx = config_idx;
                             progress_bar_data.num_primary = num_primary;
                             progress_bar_data.num_configs = num_configs;
-                            progress_bar_data.current_frames = current_frames;
-                            progress_bar_data.num_frames = num_frames;
+                            progress_bar_data.current_frames = goal;
+                            progress_bar_data.num_frames = target_frames(primary_idx,config_idx);
                             send(dq, progress_bar_data);
 
                             % Simulate under current settings
-                            sim_save(save_data,conn,table_name,current_frames,parameters,paramHash);
-                            prior_frames(primary_idx,config_idx) = prior_frames(primary_idx,config_idx) + frames_per_iter;
+                            sim_save(save_data,conn,table_name,goal,parameters,paramHash);
+                            prior_frames(primary_idx,config_idx) = goal;
 
                         end
                     end
@@ -789,43 +784,21 @@ if ~skip_simulations
             % would make the simulation loop try to collect it forever.
             prior_frames(~is_point) = Inf;
 
-            % Adaptive stability check
-            if enable_adaptive
-                for primary_idx = 1:num_primary
-                    for config_idx = 1:num_configs
-                        if ~is_sufficient(primary_idx, config_idx)
-                            paramHash = hash_cell{primary_idx, config_idx};
-                            % Read metrics_aux from main table
-                            aux = [];
-                            try
-                                loc = find(string(T.param_hash) == paramHash, 1);
-                                if ~isempty(loc) && ismember('metrics_aux', T.Properties.VariableNames) ...
-                                        && ~ismissing(T.metrics_aux(loc)) && ~isempty(string(T.metrics_aux(loc)))
-                                    aux = jsondecode(T.metrics_aux{loc});
-                                end
-                            catch
-                                aux = [];
-                            end
-                            [is_stable, ~, ~] = check_stability(aux, data_type, ...
-                                relative_tolerance, min_frames, confidence);
-                            is_sufficient(primary_idx, config_idx) = is_stable;
-                        end
-                    end
-                end
-
-                % Print convergence summary
-                fprintf("--- Iteration %d/%d (%d frames) ---\n", iter, num_iters, current_frames);
-                fprintf("  %d/%d points sufficient\n", ...
-                    sum(is_sufficient(:)), numel(is_sufficient));
-                if ~isempty(convergence_fcn)
-                    convergence_fcn(iter, num_iters, current_frames, ...
-                        sum(is_sufficient(:)), numel(is_sufficient));
-                end
-
-                if all(is_sufficient(:))
-                    fprintf("All data points converged. Stopping early at iteration %d.\n", iter);
-                    all_done = true;
-                end
+            % Re-judge each point's target from its updated error rate, then
+            % stop as soon as every point has reached its own target.
+            target_frames = frame_targets(T, hash_cell, is_point, num_frames, frame_split, ...
+                frame_split_metric, frame_split_threshold, frames_high_ber, frames_low_ber);
+            at_target = prior_frames >= target_frames;
+            n_done = nnz(at_target & is_point);
+            n_pts = nnz(is_point);
+            fprintf("--- Iteration %d/%d (%d frames) ---\n", iter, num_iters, current_frames);
+            fprintf("  %d/%d points at their frame target\n", n_done, n_pts);
+            if ~isempty(convergence_fcn)
+                convergence_fcn(iter, num_iters, current_frames, n_done, n_pts);
+            end
+            if all(at_target(:))
+                fprintf("Every point has reached its frame target. Stopping at iteration %d.\n", iter);
+                all_done = true;
             end
 
         end
@@ -856,3 +829,39 @@ end
 
 % Set finish flag
 finish_flag = true;
+end
+
+
+function target = frame_targets(T, hash_cell, is_point, num_frames, frame_split, ...
+    metric, threshold, frames_high, frames_low)
+%FRAME_TARGETS  Frames each point should reach (see FRAME TARGETS above).
+% Non-points get Inf so they never count as unfinished; the loops never
+% schedule them because their prior_frames is already Inf.
+target = repmat(num_frames, size(hash_cell));
+target(~is_point) = Inf;
+if ~frame_split
+    return;
+end
+target(is_point) = frames_high;     % no stored value yet: start here
+if isempty(T) || ~ismember('param_hash', T.Properties.VariableNames)
+    return;
+end
+H = string(T.param_hash);
+for k = find(is_point(:)).'
+    loc = find(H == string(hash_cell{k}), 1);
+    if isempty(loc), continue; end
+    try
+        mj = T.metrics(loc);
+        if iscell(mj), mj = mj{1}; end
+        m = jsondecode(char(mj));
+        if isfield(m, metric) && isfinite(m.(metric))
+            if m.(metric) >= threshold
+                target(k) = frames_high;
+            else
+                target(k) = frames_low;
+            end
+        end
+    catch
+    end
+end
+end
