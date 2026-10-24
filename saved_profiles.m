@@ -142,6 +142,35 @@ p.configs = {
     };
 p.delete_configs = [];
 
+% ADDING LDPC CODING. Coding is turned on per config by an ldpc_settings
+% struct, and it runs on the ODDM PT-MMSE receiver only (receiver_name
+% "PT-MMSE"; the MMSE, OTFS and OFDM paths ignore it). To add a coded ODDM
+% curve to this profile, append a fourth config, for example
+%
+%     struct('system_name', "ODDM", 'receiver_name', "PT-MMSE", ...
+%         'ldpc_settings', struct('N', 512, 'rate', 0.5, 'interleave', true))
+%
+% and give it a fourth legend entry, line style and colour ("ODDM, LDPC
+% rate 1/2", "--o", "#D62728"). ldpc_settings fields (resolve_ldpc_settings.m):
+%   N           codeword length in bits. Always set it, and make it divide
+%               the frame's data bits exactly: M*N*log2(M_ary) = 64*16*2 =
+%               2048 here, so 256, 512, 1024 or 2048. Any other length is
+%               refused with an error.
+%   rate        requested code rate (default 0.5); the code realises
+%               round(N*(1-rate)) parity bits, e.g. 0.8 at N = 512 is 410/512
+%   interleave  true spreads each codeword across the frame (default false)
+%   bp_iters    belief-propagation iterations (default 30)
+%   colWeight   parity-check column weight (default 6)
+%   method      "random" (default) or "peg" parity-check construction
+% QPSK only (M_ary 4). Eb/N0 is then per INFORMATION bit, Eb = Es/(2*R), so
+% a coded and an uncoded curve are compared at equal energy per delivered
+% bit. The GUI's Statistic list gains BER_info, FER_info, CWER, Thr_coded,
+% Thr_coded_cw and LDPC_conv as soon as one config is coded. A coded
+% PT-MMSE frame takes a few seconds on a 4-core desktop.
+% To sweep the code itself, use the top-level aliases ldpc_rate, ldpc_N,
+% ldpc_bp_iters or ldpc_colweight as primary_var (and leave that field out
+% of the config's ldpc_settings).
+
 % Legend entry, line style and colour per config, in config order.
 p.legend_vec = {
     "ODDM"

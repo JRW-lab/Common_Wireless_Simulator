@@ -303,6 +303,9 @@ no toolbox. It is enabled per configuration with `ldpc_settings`, for
 example `struct('N', 512, 'rate', 0.5, 'interleave', true)`. It works with
 `PT-MMSE` and offers systematic encoding, normalised min-sum decoding, bit
 interleaving, and shortening/puncturing to a fixed rate.
+The example profile in `saved_profiles.m` shows how to add a coded
+curve, which codeword lengths fit the frame, and every `ldpc_settings`
+field.
 
 `Eb` is energy per **information** bit, `Eb = Es / (log2(M) * R)`, with the
 rate the code actually realises. `parameters.ebn0_ref = "modbit"` selects
