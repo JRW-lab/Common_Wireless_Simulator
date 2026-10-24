@@ -3,7 +3,7 @@ function [llrBits, xbar] = qpsk_soft_symbols(x_soft, sigma_post2, Es)
 %   soft symbols from equalizer_ptmmse.m's unbiased soft DD estimate
 %   x_soft and its residual complex noise variance sigma_post2.
 %
-%   Extracted 2026-09-29 from sim_fun_ODDM_DDRELAXSIDA_PTMMSE.m's original
+%   Extracted 2026-09-29 from sim_fun_ODDM_DDRELAXSI_PTMMSE.m's original
 %   local `soft_symbols` helper (see that file's "SOFT CANCELLATION"
 %   header section for the full derivation) into a shared function once a
 %   SECOND call site (the perfect-CSI + LDPC debug path,

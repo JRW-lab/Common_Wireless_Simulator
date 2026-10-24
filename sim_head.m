@@ -1,7 +1,8 @@
 function finish_flag = sim_head(app_settings)
 % This file tests the BER/SER/FER for a few wireless communications
 % systems (supported: OFDM, OTFS, ODDM, TODDM), with settings specified in each
-% profile. Data is saved in a MySQL server so a password is required.
+% profile. Results go to this computer's result store (a local text store on
+% a fresh clone, or MySQL/SQLite; README.md, Results storage).
 %
 % Coded 6/9/2025, JRW
 clc;
@@ -15,13 +16,25 @@ elseif isfield(app_settings, 'use_parellelization') % legacy field name from Com
     use_parallel = app_settings.use_parellelization;
 end
 frames_per_iter = app_settings.frames_per_iter;
-priority = app_settings.priority;
-save_excel = app_settings.save_excel;
-save_mysql = app_settings.save_mysql;
+% Results always go to this computer's stores (storage step 7a removed the Priority, Enable MySQL and Save Excel
+% settings); scripts that still pass priority or save_excel are ignored, and save_mysql=false is refused
+save_mysql = true;
+if isfield(app_settings, 'save_mysql') && isequal(app_settings.save_mysql, false)
+    error('sim_head:noSaveRemoved', 'Runs without saving are no longer supported (storage step 7a); results always go to this computer''s stores.');
+end
 profile_sel = app_settings.profile_sel;
 num_frames = app_settings.num_frames;
 delete_sel = app_settings.delete_sel;
 iteratively_render = app_settings.iteratively_render;
+
+% EXPLORATION RUN (storage step 7a.1, user decision 2026-10-21): simulate and render, write nothing anywhere
+dont_save = isfield(app_settings, 'dont_save') && isequal(app_settings.dont_save, true);
+if dont_save
+    if delete_sel, error('sim_head:exploreDelete', 'An exploration run can not delete stored configs.'); end
+    if num_frames <= 0, error('sim_head:exploreNoFrames', 'An exploration run needs a frame count above 0.'); end
+    save_mysql = false;
+    fprintf("*** EXPLORATION RUN: nothing is saved (no store, mirror, Excel or frame log); results live only in this figure ***\n");
+end
 
 % FRAME TARGETS (2026-10-13). Replaces adaptive stopping.
 %
@@ -94,11 +107,59 @@ if isfield(app_settings, 'convergence_fcn')
     convergence_fcn = app_settings.convergence_fcn;
 end
 
+% Test only, never set by the GUI: a scratch tree's infrastructure first on the path (storage step 7b; as collect_profile's TEST_INFRA)
+test_infra = "";
+if isfield(app_settings, 'test_infra') && strlength(string(app_settings.test_infra)) > 0
+    test_infra = string(app_settings.test_infra);
+    test_root = fileparts(fileparts(char(test_infra)));
+    in_temp = startsWith(lower(strrep(test_root, '\', '/')), lower(strrep(tempdir, '\', '/')));
+    if ~in_temp || ~isfile(fullfile(test_root, 'TEST_INFRA_MARKER'))
+        error('sim_head:testInfra', 'test_infra must lie two levels below a root inside tempdir that holds TEST_INFRA_MARKER.');
+    end
+    addpath(char(test_infra), '-begin');
+    fprintf('*** TEST_INFRA: reading and writing the scratch tree %s as computer %s ***\n', test_root, char(host_id()));
+end
+
 % Settings
-save_data.priority = priority;
-save_data.save_excel = save_excel;
 save_data.save_mysql = save_mysql;
+save_data.dont_save = dont_save;
+save_data.store_kind = "mysql";
 dbname     = 'comm_database';
+
+% A fresh clone (no registry, no MySQL setup) gets a local text store first (local_store_setup)
+if save_mysql && exist('local_store_setup', 'file') == 2
+    local_store_setup();
+end
+
+% With a results registry, write where it says this machine writes (db_target); a SQLite or text primary has no dbname (storage step 7b)
+if save_mysql && ~isempty(db_registry())
+    tgt = db_target();
+    dbname = char(tgt.dbname);
+    table_name = char(tgt.table);
+    save_data.store_kind = tgt.kind;
+    save_data.tgt = tgt;
+end
+
+% Test only, never set by the GUI: redirect writes to a throwaway test_* table in this machine's database (notes seed_worker_NOTES.md S4)
+if isfield(app_settings, 'test_table') && strlength(string(app_settings.test_table)) > 0
+    assert(startsWith(string(app_settings.test_table), "test_"), 'sim_head:testTable', 'test_table must start with "test_".');
+    if save_data.store_kind ~= "mysql"
+        error('sim_head:testTableNeedsMySQL', 'test_table needs a MySQL primary; test a file primary with test_infra.');
+    end
+    table_name = char(app_settings.test_table);
+end
+
+% Refuse to collect or delete while this machine's collection hold file exists; rendering and test_* runs are exempt (collectors/README.md)
+hold_file = fullfile(pwd, 'collectors', "HOLD_" + host_id());
+if save_mysql && (num_frames > 0 || delete_sel) && ~startsWith(string(table_name), "test_") && isfile(hold_file)
+    error('sim_head:onHold', 'Collection is on hold on this machine: %s. Delete %s to lift it.', ...
+        strtrim(fileread(hold_file)), hold_file);
+end
+
+% A run that writes real results first marks mirrors stale that a crash left behind the primary (storage step 5)
+collects_real = save_mysql && (num_frames > 0 || delete_sel) && ~startsWith(string(table_name), "test_");
+if collects_real, mirrors_quick_check(); end
+
 % Recorded on save_data (2026-09-25) so a consumer of save_data never has
 % to fish the database name out of a `conn` handle to reconnect with. In a
 % parfor worker that handle is hollow - isvalid() true, isopen() false, every
@@ -107,9 +168,6 @@ dbname     = 'comm_database';
 % real database failure gets reported as "Invalid or deleted object.".
 % sim_save -> mysql_ensure_conn reconnects from this name instead.
 save_data.dbname = dbname;
-save_data.excel_folder = 'Data';
-save_data.excel_name = table_name;
-save_data.excel_path = fullfile(save_data.excel_folder,save_data.excel_name + ".xlsx");
 save_data.enable_logging = enable_frame_log;
 save_data.log_dir = fullfile('Logs', table_name);
 
@@ -136,11 +194,16 @@ addpath(fullfile(pwd, 'Comm Functions/ODDM Functions'));
 % addpath prepends, so TX RX Functions still wins on any name tie --
 % which is what we want, since equalizer_ptmmse.m lives there and was
 % deliberately NOT duplicated into this folder.
-addpath(fullfile(pwd, 'Comm Functions/ODDM Functions/DD-RELAX-paper'));
+if isfolder(fullfile(pwd, 'Comm Functions/ODDM Functions/DD-RELAX-paper'))   % not in the public repo
+    addpath(fullfile(pwd, 'Comm Functions/ODDM Functions/DD-RELAX-paper'));
+end
 addpath(fullfile(pwd, 'Comm Functions/TODDM Functions'));
 addpath(fullfile(pwd, 'Comm Functions/TX RX Functions'));
 addpath(fullfile(pwd, 'Comm Functions/Coding Functions'));
 addMysqlJarOnce();
+
+% The addpaths above moved the real infrastructure back in front of a test scratch tree
+if strlength(test_infra) > 0, addpath(char(test_infra), '-begin'); end
 
 % Load profiles and select
 all_profiles = saved_profiles();
@@ -155,12 +218,59 @@ render_figure = true;
 
 % Extract data from profile
 profile = all_profiles{profile_sel};
+
+% An original whose points are being recollected is view-only: figures and tables render its old frames, but it
+% takes no new ones (user decision 2026-10-22). Exploration runs and test tables write nothing real, so they may run.
+if isfield(profile, 'superseded_by') && (num_frames > 0 || delete_sel) && ~dont_save && ~startsWith(string(table_name), "test_")
+    error('sim_head:superseded', ['This profile''s results predate the new saving system and are view-only: ' ...
+        'Generate Figure still shows them. Collect new frames on "%s" instead.'], profile.superseded_by);
+end
 fields_names = fieldnames(profile);
 for i = 1:numel(fields_names)
     eval([fields_names{i} ' = profile.(fields_names{i});']);
 end
-figure_data.ylim_vec = ylim_vec;
+% OUTPUT SETTINGS COME FROM THE GUI (2026-10-07), not from the profile.
+% vis_type / data_type / legend_loc / ylim_vec were removed from this
+% project's profiles -- they describe how to LOOK at a result, not what to
+% simulate, and keeping them in the profile meant editing a hashed-adjacent
+% file to change an axis. Profiles that still carry them (the sibling
+% projects share gen_figure/gen_table) keep working: a profile value is
+% used whenever the GUI does not supply one.
+if isfield(app_settings,'vis_type') && strlength(string(app_settings.vis_type)) > 0
+    vis_type = string(app_settings.vis_type);
+elseif ~exist('vis_type','var')
+    vis_type = "figure";
+end
+if ~exist('legend_loc','var'), legend_loc = "northeast"; end
+% EMPTY, not a guess. A fabricated default is worse than none: [0 1] on a
+% log-scale metric (BER_info, CWER, recon_mse) puts the lower limit at zero,
+% which is -Inf in log space. gen_figure treats empty as "auto-scale".
+if ~exist('ylim_vec','var'),   ylim_vec   = [];          end
+if ~exist('data_type','var'),  data_type  = "BER";       end
+figure_data.ylim_vec   = ylim_vec;
 figure_data.legend_loc = legend_loc;
+
+% The GUI's own choices, passed under separate names so gen_figure can tell
+% "the user asked for this" from "the profile happened to have one". Sibling
+% projects set neither and are unaffected.
+if isfield(app_settings,'legend_loc') && strlength(string(app_settings.legend_loc)) > 0
+    figure_data.legend_loc_user = string(app_settings.legend_loc);
+end
+if isfield(app_settings,'ylim_vec') && numel(app_settings.ylim_vec) == 2
+    figure_data.ylim_user = app_settings.ylim_vec;
+end
+
+% Largest constellation across the profile, for gen_figure's throughput
+% default of [0 log2(max(M_ary))]. Config-level M_ary overrides the default.
+M_ary_max = 4;
+if isfield(default_parameters,'M_ary'), M_ary_max = default_parameters.M_ary; end
+for ci = 1:numel(configs)
+    if isstruct(configs{ci}) && isfield(configs{ci},'M_ary')
+        M_ary_max = max(M_ary_max, configs{ci}.M_ary);
+    end
+end
+figure_data.M_ary_max = M_ary_max;
+
 if isfield(app_settings, 'figure_statistic') && ~isempty(app_settings.figure_statistic)
     data_type = app_settings.figure_statistic;
 end
@@ -183,7 +293,10 @@ persistent table_verified
 if isempty(table_verified)
     table_verified = containers.Map('KeyType', 'char', 'ValueType', 'logical');
 end
-if save_data.save_mysql
+if save_data.save_mysql && save_data.store_kind ~= "mysql"
+    % A SQLite or text primary: its store opened by its adapter, no table to create (storage step 7b)
+    conn = store_connect(save_data.tgt);
+elseif save_data.save_mysql
     conn = mysql_login(dbname);
 
     % Create table/flags if this is the first time this session we've
@@ -230,14 +343,54 @@ else
     conn = [];
 end
 
-% Ensure the folder exists
-if ~isfolder(save_data.excel_folder)
-    mkdir(save_data.excel_folder);
+%% Make parameters for each sim point (no DB access needed yet)
+% ---------------------------------------------------------------------
+% SECONDARY SWEEPS (2026-10-09): p.secondary_var / p.secondary_vals turn a
+% sweep into a GRID, every primary value collected at every secondary value.
+%
+% IMPLEMENTED BY FLATTENING, deliberately. The grid is unrolled into the
+% existing (row x config) point list rather than adding a third dimension,
+% so hash_cell, params_cell, prior_frames, the adaptive-convergence tests
+% and both simulation loops below are untouched - they only ever index
+% rows. A third index would have had to be threaded through every one of
+% them, and each of those edits is a chance to compute a hash that differs
+% from the one sim_head writes, which is this project's most-repeated bug.
+%
+% ORDER MATTERS AND IS FIXED: the PRIMARY varies fastest, so row
+% (s-1)*numel(primary_vals) + p holds (primary p, secondary s). gen_figure
+% reshapes on exactly that convention to recover the grid. Changing the
+% order here without changing it there silently transposes every surface.
+sweep_primary = primary_vals(:).';
+has_secondary = exist('secondary_var','var') && ~isempty(secondary_var) ...
+             && exist('secondary_vals','var') && ~isempty(secondary_vals);
+if has_secondary
+    nP = numel(primary_vals);
+    nS = numel(secondary_vals);
+    sweep_primary   = repmat(primary_vals(:).', 1, nS);
+    sweep_secondary = repelem(secondary_vals(:).', 1, nP);
+else
+    sweep_secondary = [];
+end
+num_primary = numel(sweep_primary);
+num_configs = length(configs); %#ok<USENS>
+
+% A flat config is anchored at ONE primary value and has no defined meaning
+% on a grid, so the combination is refused rather than guessed at. Mirrors
+% the identical guard in build_point_params.
+if has_secondary && exist('flat_configs','var') && ~isempty(flat_configs)
+    error("sim_head:flatConfigsWithSecondary", ...
+        ['Profile declares both flat_configs and secondary_var. A flat ' ...
+         'config is anchored at a single primary value and has no defined ' ...
+         'meaning on a two-dimensional sweep. Use one or the other.']);
 end
 
-%% Make parameters for each sim point (no DB access needed yet)
-num_primary = length(primary_vals);
-num_configs = length(configs); %#ok<USENS>
+% The renderer needs the GRID SHAPE, which the flattened point list no
+% longer carries. figure_data.primary_vals stays the original axis (set
+% further up); these two say how the rows fold back into a surface.
+if has_secondary
+    figure_data.secondary_var  = secondary_var;
+    figure_data.secondary_vals = secondary_vals;
+end
 
 % ---------------------------------------------------------------------
 % FLAT CONFIGS (2026-09-21): a config whose metric does not depend on the
@@ -327,11 +480,12 @@ figure_data.flat_row = flat_row;
 system_names = cell(num_primary,num_configs);
 params_cell = cell(num_primary,num_configs);
 hash_cell = cell(num_primary,num_configs);
-prior_frames = zeros(length(primary_vals),length(configs));
+prior_frames = zeros(num_primary,length(configs));
 for primary_idx = 1:num_primary
 
-    % Set primary variable
-    primary_val = primary_vals(primary_idx);
+    % Set primary variable (from the flattened sweep, so this is the
+    % primary value of this ROW, not of primary_vals(primary_idx))
+    primary_val = sweep_primary(primary_idx);
 
     % Go through each settings profile
     for config_idx = 1:num_configs
@@ -373,6 +527,11 @@ for primary_idx = 1:num_primary
         end
         if ~use_flat_defaults(config_idx)
             parameters.(primary_var) = primary_val;
+            % Injected before the config loop below, so a config field of
+            % the same name still wins - same precedence as the primary.
+            if has_secondary
+                parameters.(secondary_var) = sweep_secondary(primary_idx);
+            end
         end
         config_sel = configs{config_idx};
         config_fields = fields(config_sel);
@@ -460,33 +619,55 @@ end
 hash_list = hash_cell(is_point);
 hash_list = hash_list(:);
 
+% ---------------------------------------------------------------------
+% STAGE-LIMITED FRAMES AND PER-METRIC SAMPLE COUNTS (2026-10-16).
+%
+% A run collects ONE statistic, the GUI's figure_statistic, and each point
+% runs frames only as far as that statistic needs (metric_stage.m):
+%   "full"  the whole frame, as before; every metric gains the frames;
+%   "est1"  stop after the first channel estimate (recon_mse_r1 only);
+%   "none"  the point's sim_fun cannot measure it (perfect CSI has no
+%           estimate), so the point is not scheduled. It still renders.
+% The frame target applies to that metric's OWN sample count
+% (metric_sample_count), so recon_mse_r1 can sit at 2000 samples on a
+% point whose BER has 500 frames, and collecting it moves neither BER's
+% count nor frames_simulated. For a full-frame statistic the count is
+% frames_simulated, exactly as before.
+%
+% stage_cell, like params_cell, depends only on parameters and the
+% statistic, never on the database, and nothing here enters param_hash.
+% ---------------------------------------------------------------------
+stat_metric = string(data_type);
+stage_cell = repmat({"full"}, num_primary, num_configs);
+for k = find(is_point(:)).'
+    stage_cell{k} = metric_stage(params_cell{k}, stat_metric);
+end
+is_sched = is_point & ~cellfun(@(s) s == "none", stage_cell);
+n_est1 = nnz(is_sched & cellfun(@(s) s == "est1", stage_cell));
+n_none = nnz(is_point & ~is_sched);
+if ~skip_simulations
+    fprintf("Collecting %s: %d point(s) with whole frames", stat_metric, nnz(is_sched) - n_est1);
+    if n_est1 > 0
+        fprintf(", %d stopping each frame at the first channel estimate", n_est1);
+    end
+    if n_none > 0
+        fprintf(", %d skipped (their sim_fun does not produce %s)", n_none, stat_metric);
+    end
+    fprintf(".\n");
+end
+
 % Check already-saved results, scoped to just this profile's own
 % param_hashes for MySQL (an indexed lookup against the primary key)
 % rather than "*" (a full-table scan) - the results table is shared
 % across every project, so pulling everyone's history here would only
-% get slower as it grows. Excel still reads the whole sheet since
-% readtable has no way to filter during the read.
-switch save_data.priority
-    case "mysql"
-        if save_data.save_mysql
-            T = mysql_load(conn,table_name,hash_list);
-        elseif save_data.save_excel
-            try
-                T = readtable(save_data.excel_path, 'TextType', 'string');
-            catch
-                T = table;
-            end
-        end
-    case "local"
-        if save_data.save_excel
-            try
-                T = readtable(save_data.excel_path, 'TextType', 'string');
-            catch
-                T = table;
-            end
-        elseif save_data.save_mysql
-            T = mysql_load(conn,table_name,hash_list);
-        end
+% get slower as it grows. Waits out a connection loss instead of throwing.
+% An exploration run starts from nothing and keeps its rows in memory (Tmem)
+Tmem = mem_merge(table(), []);
+if dont_save
+    T = Tmem;
+    save_data.mem_table = Tmem;
+else
+    [T,conn] = load_merged(conn,dbname,table_name,hash_list,table);
 end
 
 %% Resolve prior progress / handle deletions for each sim point
@@ -499,40 +680,16 @@ for primary_idx = 1:num_primary
 
         % Either delete the saved data and reset, or note previous progress
         if delete_sel && ismember(config_idx,delete_configs)
-            % Delete data from database/table
-            switch save_data.priority
-                case "mysql"
-                    if save_data.save_mysql
-                        delete_command = sprintf("DELETE FROM %s WHERE param_hash = '%s';",table_name,paramHash);
-                        exec(conn, delete_command);
-                    elseif save_data.save_excel
-                        % T has no param_hash variable at all (not just no
-                        % matching rows) the first time this profile is run
-                        % with a fresh/nonexistent excel_path - nothing to
-                        % delete yet in that case.
-                        try
-                            table_locs = 1 - (string(T.param_hash) == paramHash);
-                            T = T(logical(table_locs),:);
-                        catch
-                        end
-                    end
-                case "local"
-                    if save_data.save_excel
-                        try
-                            table_locs = 1 - (string(T.param_hash) == paramHash);
-                            T = T(logical(table_locs),:);
-                        catch
-                        end
-                    elseif save_data.save_mysql
-                        delete_command = sprintf("DELETE FROM %s WHERE param_hash = '%s';",table_name,paramHash);
-                        exec(conn, delete_command);
-                    end
-            end
+            % Delete data from every results source
+            delete_merged(conn, dbname, table_name, paramHash);
         else
-            % Load data from DB
+            % Load data from DB. The count is the collected metric's own
+            % (see STAGE-LIMITED FRAMES); frames_simulated for a full-frame
+            % statistic.
             try
                 sim_result = T(string(T.param_hash) == paramHash, :);
-                prior_frames(primary_idx,config_idx) = sim_result.frames_simulated;
+                prior_frames(primary_idx,config_idx) = metric_sample_count( ...
+                    sim_result, stat_metric, stage_cell{primary_idx,config_idx});
             catch
                 prior_frames(primary_idx,config_idx) = 0;
             end
@@ -546,12 +703,7 @@ end
 % (including the parfor, where added conditionals are awkward) needing to
 % know that flat configs exist; frame_targets gives non-points an Inf
 % target to match. For a profile with no flat configs this assigns nothing.
-prior_frames(~is_point) = Inf;
-
-% Overwrite old table (Excel only)
-if delete_sel && save_data.save_excel
-    writetable(T, save_data.excel_path);
-end
+prior_frames(~is_sched) = Inf;   % non-points and points that cannot measure the statistic
 
 % Frame logging. The destructive adaptive-mode reset that used to sit here
 % was removed with adaptive stopping on 2026-10-13.
@@ -583,6 +735,21 @@ if iteratively_render
     tRender = tic;
 end
 
+% INDEPENDENT RANDOMNESS PER SESSION. MATLAB starts every session with the
+% SAME Mersenne Twister state, so two machines running the GUI both begin at
+% rand = 0.8147236864... Any point they share then replays IDENTICAL channel
+% draws and data, and those duplicate frames blend into the same running
+% average - inflating frames_simulated with correlated samples and making
+% the statistics look tighter than the evidence supports. Nothing errors and
+% nothing is lost, which is what makes it dangerous.
+%
+% collect_profile.m already guards this with a mandatory per-worker SEED
+% (see BUG_LOG #25 in the sibling project); the GUI path had no equivalent.
+% Shuffling costs nothing: reproducibility here comes from param_hash and
+% the stored metrics, not from the RNG, and collection is a Monte Carlo
+% average over frames that are SUPPOSED to be independent.
+rng('shuffle');
+
 % Start sim loop. Iterations run until the LARGEST possible target; points
 % with smaller targets stop being scheduled once they reach theirs.
 target_frames = frame_targets(T, hash_cell, is_point, num_frames, frame_split, ...
@@ -590,8 +757,13 @@ target_frames = frame_targets(T, hash_cell, is_point, num_frames, frame_split, .
 frames_max = max([num_frames frames_high_ber frames_low_ber]);
 num_iters = ceil(frames_max / frames_per_iter);
 dq = parallel.pool.DataQueue;
-afterEach(dq, @updateProgressBar);
-if ~isempty(progress_fcn)
+% ONE console printer only. updateProgressBar and the GUI's
+% print_progress_params BOTH begin with clc, so attaching both made them
+% erase each other and only whichever ran last survived -- which is why
+% the full parameter listing never appeared when running from the GUI.
+if isempty(progress_fcn)
+    afterEach(dq, @updateProgressBar);
+else
     afterEach(dq, progress_fcn);
 end
 if ~skip_simulations
@@ -629,11 +801,16 @@ if ~skip_simulations
                         parpool(poolCluster, maxCores);     % Start a parallel pool with all available workers
                     end
                     parfevalOnAll(@() javaaddpath('mysql-connector-j-8.4.0.jar'), 0);
+
+                    % Seed each worker on its own stream; a fresh pool otherwise replays the same draws (notes seed_worker_NOTES.md S1)
+                    wait(parfevalOnAll(@seed_worker, 0, randi(2^31)));
                     pool_ready = true;
                 end
 
-                % Go through each settings profile
+                % Go through each settings profile; an exploration run's batches come back in batch_out
+                batch_out = cell(num_primary, num_configs);
                 parfor primary_idx = 1:num_primary
+                    row_b = cell(1, num_configs);
                     for config_idx = 1:num_configs
                         goal = goal_frames(primary_idx,config_idx);
                         if goal > prior_frames(primary_idx,config_idx)
@@ -671,11 +848,19 @@ if ~skip_simulations
                             % "Error using sim_save (line 149) Invalid or
                             % deleted object." - the sequential branch below
                             % can and does keep passing the real connection.
-                            sim_save(save_data,[],table_name,goal,parameters,paramHash);
+                            run_opts = struct('metric', stat_metric, 'stage', stage_cell{primary_idx,config_idx});
+                            if dont_save, run_opts.mem_row = Tmem(strcmp(Tmem.param_hash, paramHash), :); end %#ok<PFBNS> empty unless exploring
+                            row_b{config_idx} = sim_save(save_data,[],table_name,goal,parameters,paramHash,run_opts);
                             prior_frames(primary_idx, config_idx) = goal;
 
                         end
                     end
+                    batch_out(primary_idx, :) = row_b;
+                end
+
+                % Merge an exploration run's batches into its in-memory table
+                for bi = 1:numel(batch_out)
+                    Tmem = mem_merge(Tmem, batch_out{bi});
                 end
             else
 
@@ -704,7 +889,9 @@ if ~skip_simulations
                             send(dq, progress_bar_data);
 
                             % Simulate under current settings
-                            sim_save(save_data,conn,table_name,goal,parameters,paramHash);
+                            run_opts = struct('metric', stat_metric, 'stage', stage_cell{primary_idx,config_idx});
+                            if dont_save, run_opts.mem_row = Tmem(strcmp(Tmem.param_hash, paramHash), :); end
+                            Tmem = mem_merge(Tmem, sim_save(save_data,conn,table_name,goal,parameters,paramHash,run_opts));
                             prior_frames(primary_idx,config_idx) = goal;
 
                         end
@@ -715,6 +902,7 @@ if ~skip_simulations
             if iteratively_render
                 if toc(tRender) > render_time
                     tRender = tic;
+                    if dont_save, save_data.mem_table = Tmem; end
                     % Render figure
                     switch vis_type
                         case "table"
@@ -733,47 +921,24 @@ if ~skip_simulations
             % "*" (a full-table scan) - the results table is now shared
             % across every project, so a full reload here would only get
             % slower as everyone else's history accumulates.
-            switch save_data.priority
-                case "mysql"
-                    if save_data.save_mysql
-                        try
-                            T = mysql_load(conn,table_name,hash_list);
-                        catch
-                            conn = mysql_login(conn.DataSource);
-                            T = mysql_load(conn,table_name,hash_list);
-                        end
-                    elseif save_data.save_excel
-                        try
-                            T = readtable(save_data.excel_path, 'TextType', 'string');
-                        catch
-                            T = table;
-                        end
-                    end
-                case "local"
-                    if save_data.save_excel
-                        try
-                            T = readtable(save_data.excel_path, 'TextType', 'string');
-                        catch
-                            T = table;
-                        end
-                    elseif save_data.save_mysql
-                        try
-                            T = mysql_load(conn,table_name,hash_list);
-                        catch
-                            conn = mysql_login(conn.DataSource);
-                            T = mysql_load(conn,table_name,hash_list);
-                        end
-                    end
+            % Reconnects by name and waits for the server:
+            % mysql_login(conn.DataSource) cannot, because a
+            % closed handle throws on any property read
+            if dont_save
+                T = Tmem;
+            else
+                [T,conn] = load_merged(conn,dbname,table_name,hash_list,T);
             end
             for primary_idx = 1:num_primary
                 for config_idx = 1:num_configs
-                    if ~is_point(primary_idx,config_idx)
+                    if ~is_sched(primary_idx,config_idx)
                         continue;
                     end
                     paramHash = hash_cell{primary_idx,config_idx};
                     try
                         sim_result = T(string(T.param_hash) == paramHash, :);
-                        prior_frames(primary_idx,config_idx) = sim_result.frames_simulated;
+                        prior_frames(primary_idx,config_idx) = metric_sample_count( ...
+                            sim_result, stat_metric, stage_cell{primary_idx,config_idx});
                     catch
                         prior_frames(primary_idx,config_idx) = 0;
                     end
@@ -782,15 +947,15 @@ if ~skip_simulations
             % Re-assert the Inf sentinel: without the `continue` above, a
             % non-point would fall into the catch and be reset to 0, which
             % would make the simulation loop try to collect it forever.
-            prior_frames(~is_point) = Inf;
+            prior_frames(~is_sched) = Inf;
 
             % Re-judge each point's target from its updated error rate, then
             % stop as soon as every point has reached its own target.
             target_frames = frame_targets(T, hash_cell, is_point, num_frames, frame_split, ...
                 frame_split_metric, frame_split_threshold, frames_high_ber, frames_low_ber);
             at_target = prior_frames >= target_frames;
-            n_done = nnz(at_target & is_point);
-            n_pts = nnz(is_point);
+            n_done = nnz(at_target & is_sched);
+            n_pts = nnz(is_sched);
             fprintf("--- Iteration %d/%d (%d frames) ---\n", iter, num_iters, current_frames);
             fprintf("  %d/%d points at their frame target\n", n_done, n_pts);
             if ~isempty(convergence_fcn)
@@ -812,6 +977,7 @@ end
 clc;
 fprintf("Displaying results for profile %d:\n",profile_sel)
 if render_figure
+    if dont_save, save_data.mem_table = Tmem; end
     switch vis_type
         case "table"
             gen_table(save_data,conn,table_name,hash_cell,configs,figure_data);
@@ -826,6 +992,12 @@ end
 % within this MATLAB session) rather than closed here - closing it would
 % throw away the whole point of that reuse, forcing the next Simulate /
 % Generate Figure click to pay a fresh connection handshake again.
+
+% A collecting run checks the mirrors again at its normal end and refreshes SQLite snapshots (storage steps 5, 6a)
+if collects_real, mirrors_quick_check(); store_flush(); end
+if dont_save
+    fprintf("*** EXPLORATION RUN finished: nothing was saved ***\n");
+end
 
 % Set finish flag
 finish_flag = true;

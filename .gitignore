@@ -38,12 +38,12 @@ collectors/
 
 # --- In-development superimposed-pilot DD-RELAX (DD-RELAX-SI) work ---
 # Added 2026-10-03 by explicit user instruction: this algorithm family is
-# NOT finalized and is NOT to be uploaded to the repo for now. It is also
-# deliberately exempt from the portfolio-wide "every estimator ships with
-# a flops_*.m + References/*.lean complexity derivation" policy until the
-# algorithms settle -- deriving a FLOP count against a moving design would
-# just produce a number that goes stale. Revisit BOTH exclusions together
-# once the design is final.
+# NOT finalized and is NOT to be uploaded to the repo for now.
+#
+# The flops exemption that used to sit here is LIFTED as of 2026-10-07:
+# flops_ddrelaxsi.m and References/DDRelaxSIFlops.lean now exist, so the
+# complexity policy is satisfied. The UPLOAD exclusion below still stands
+# until the design is final.
 #
 # Covers the superimposed-pilot variants (SI / SI-DA / SI-GLS / SI-OP),
 # the narrow-guard DD-RELAX-L spin-off, and the shared DD-RELAX-paper
@@ -54,6 +54,13 @@ collectors/
 Comm Functions/ODDM Functions/DD-RELAX-paper/
 Comm Functions/ODDM Functions/sim_fun_ODDM_DDRELAXSI*.m
 Comm Functions/ODDM Functions/sim_fun_ODDM_DDRELAXL_PTMMSE.m
+# Withheld 2026-10-07: this one WAS tracked, but it calls dd_relax,
+# build_ctx, oddm_config and build_HDD, which all live in the excluded
+# DD-RELAX-paper/ folder above - so the published copy had dangling
+# dependencies and could not run from a clean clone. Untracked with
+# `git rm --cached`. Publish it together with DD-RELAX-paper/ once the
+# design is final.
+Comm Functions/ODDM Functions/sim_fun_ODDM_DDRELAX_PTMMSE.m
 
 # =====================================================================
 # Debug / diagnostic artefacts -- added 2026-10-05 while preparing the
@@ -112,3 +119,54 @@ References/Superimposed Pilot DD-RELAX/
 *_prefix.m
 scratch/
 tmp/
+
+# --- Run artefacts and binary dumps, by file type. Belt and braces: the
+#     session scratchpad lives OUTSIDE this tree entirely (under the
+#     user's AppData Temp), so it can never be committed from here. These
+#     rules only catch an ad-hoc copy made inside the working tree.
+*.log
+*.mat
+*.bak
+scratchpad/
+
+# --- Manual audit snapshots (2026-10-12). audits/snapshots/ holds a copy of
+#     every file at the moment it passed audit, INCLUDING the unpublished
+#     DD-RELAX-SI sources excluded above, so it must never be pushed.
+#     audits/AUDIT_LOG.md itself is not ignored. ---
+audits/snapshots/
+
+# --- Machine-specific results setup and stores (2026-10-24, public repo prep).
+#     A fresh clone has neither file; local_store_setup.m writes both on the
+#     first run (a local text store), so they must never be committed. ---
+db_sources.json
+Results/
+mysql_local.json
+
+# --- Unpublished, machine-local profiles (the DD-RELAX family). saved_profiles.m
+#     lists them first when the file exists; the public repo ships without it. ---
+saved_profiles_local.m
+
+# --- Internal audit records (physics audits of in-development code) ---
+audits/
+
+# --- Complexity references and tests whose code lives in the unpublished
+#     DD-RELAX-paper/ folder (est_bem, est_nomp, nomp_core, DD-RELAX-SI). ---
+References/BEMFlops.lean
+References/NOMPFlops.lean
+References/DDRelaxSIFlops.lean
+tests/validate_nomp_paper.m
+
+# --- Channel-estimation baselines withheld (user decision 2026-10-24). They call
+#     helpers in the unpublished DD-RELAX-paper/ folder (oddm_config, build_ctx,
+#     build_HDD, est_*), so they cannot run from a public clone. Published again
+#     together with that folder. Their complexity files and the References README
+#     (which compares them with DD-RELAX) go with them. ---
+Comm Functions/ODDM Functions/sim_fun_ODDM_OMP_PTMMSE.m
+Comm Functions/ODDM Functions/sim_fun_ODDM_SAGE_PTMMSE.m
+Comm Functions/ODDM Functions/sim_fun_ODDM_DTMUSIC_PTMMSE.m
+Comm Functions/ODDM Functions/sim_fun_ODDM_DTMUSICW_PTMMSE.m
+References/OMPFlops.lean
+References/SAGEFlops.lean
+References/DTMUSICOrdFlops.lean
+References/DDRelaxFlops.lean
+References/README.md

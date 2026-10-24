@@ -15,6 +15,23 @@ end
 % Q,res), since none of those parameters describe the integration method
 % itself. Bump this tag any time DD_cross_ambig.m's own integration
 % method changes again, so old and new tables can never collide.
+% Q PARITY (added 2026-10-06; rationale corrected 2026-10-20). "rrc" and
+% "sinc" need an EVEN Q: CP-Free ODDM's convention, under which the causal
+% pulse's centre Q*Ts/2 lies on the Ts sampling lattice. It is a convention
+% check, not a truncation-quality rule: an RRC with alpha > 0 has no zeros
+% at integer multiples of Ts, and an odd Q often gives lower residual ISI
+% (measurements and reasoning in notes/oddm_config_NOTES.md, C2). "rect" is
+% exempt and uses Q = 1, a width-Ts rectangle (forced above, in
+% DD_cross_ambig.m, and in sim_fun_ODDM_PTMMSE.m).
+if (shape == "rrc" || shape == "sinc") && mod(Q,2) ~= 0
+    error("gen_DD_cross_ambig_table:oddQ", ...
+        ['Q must be EVEN for shape="%s" (got %g): CP-Free ODDM specifies an ' ...
+         'even Q, which puts the causal pulse''s centre Q*Ts/2 on the Ts ' ...
+         'sampling lattice, and every table and result in this project uses ' ...
+         'one. Only shape="rect" may use an odd Q, and then only Q=1. ' ...
+         'See notes/oddm_config_NOTES.md, C2.'], shape, Q);
+end
+
 file_name = sprintf('DD_table_GL_N%d_M%d_T%d,Fc%d_v%d_%s_a%.2f_Q%d_%dres',N,M,T,Fc,v,shape,alpha,Q,res);
 folder_name = 'Pre-rendered Lookup Tables/ODDM DD Cross-Ambiguity Tables';
 full_path = folder_name + "/" + file_name + ".mat";

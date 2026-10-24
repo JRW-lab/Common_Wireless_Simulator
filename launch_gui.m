@@ -41,7 +41,7 @@ addpath(fullfile(cwsRoot, 'Common-Wireless-Infrastructure'));
 % (the pre-2026-10-12 scheme) and every nested point would read as empty.
 mustBeLocal = {'gen_figure','gen_table','mysql_load','jsonencode_sorted', ...
                'flatten_params','build_point_params','saved_profiles','sim_head', ...
-               'cost_head','run_sim_fun'};
+               'cost_head','run_sim_fun','profile_metrics','local_store_setup'};
 bad = {};
 for k = 1:numel(mustBeLocal)
     p = which(mustBeLocal{k});
@@ -61,5 +61,8 @@ if ~isempty(bad)
          'persists, check for a saved pathdef.m pinning another project''s\n' ...
          'folders ahead of this one.'], strjoin(bad, sprintf('\n')), cwsRoot);
 end
+
+% A fresh clone gets a local text results store before the GUI reads its storage list
+local_store_setup();
 
 WirelessSimulator;

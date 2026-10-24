@@ -1,12 +1,15 @@
-function [parameters, paramHash, is_real] = build_point_params(prof, primary_val, config_idx)
+function [parameters, paramHash, is_real] = build_point_params(prof, primary_val, config_idx, secondary_val)
 %BUILD_POINT_PARAMS  The ONE definition of "what parameter struct does this
 %test point have, and therefore what is its param_hash".
 %
 %   [parameters, paramHash, is_real] = build_point_params(prof, primary_val, config_idx)
+%   [parameters, paramHash, is_real] = build_point_params(prof, primary_val, config_idx, secondary_val)
 %
-%   prof         a profile struct from saved_profiles()
-%   primary_val  a value of prof.primary_var
-%   config_idx   index into prof.configs
+%   prof          a profile struct from saved_profiles()
+%   primary_val   a value of prof.primary_var
+%   config_idx    index into prof.configs
+%   secondary_val a value of prof.secondary_var, REQUIRED when the profile
+%                 declares one (see SECONDARY SWEEPS below)
 %   is_real      false when this (primary_val, config) pair is NOT a test
 %                point -- i.e. a flat config away from its anchor. Callers
 %                MUST skip those rather than collect or query them.
@@ -36,10 +39,53 @@ function [parameters, paramHash, is_real] = build_point_params(prof, primary_val
 %     appear in the hash at all. This is what lets a flat config match a
 %     measurement collected by a separate standalone profile.
 
+% SECONDARY SWEEPS (2026-10-09). A profile may declare
+%
+%     p.secondary_var  = "EbN0";
+%     p.secondary_vals = 4:2:12;
+%
+% which turns the sweep into a GRID: every primary value is collected at
+% every secondary value. The secondary variable is injected exactly like
+% the primary one and is therefore HASHED, which is what makes a grid point
+% addressable at all.
+%
+% WHY THE ARGUMENT IS MANDATORY RATHER THAN DEFAULTED. If a caller on a
+% secondary profile omitted it, this function would build a struct carrying
+% the profile's DEFAULT value of that variable and hash it -- a plausible
+% hash for a point that is not the one asked for. That reads downstream as
+% "no data yet" and silently forks collection, which is Bug Log #6a/#12's
+% exact failure mode. Refusing is the only safe option.
+has_secondary = isfield(prof,'secondary_var') && ~isempty(prof.secondary_var);
+if has_secondary && nargin < 4
+    error("build_point_params:secondaryValueRequired", ...
+        ['This profile sweeps a secondary variable ("%s"), so a point is ' ...
+         'identified by (primary, secondary, config) and secondary_val ' ...
+         'must be supplied. Omitting it would hash a DIFFERENT point ' ...
+         'without erroring.'], string(prof.secondary_var));
+end
+if ~has_secondary && nargin >= 4 && ~isempty(secondary_val)
+    error("build_point_params:noSecondaryDeclared", ...
+        ['A secondary_val was supplied but this profile declares no ' ...
+         'secondary_var. Injecting it would hash a field the profile ' ...
+         'never meant to sweep.']);
+end
+
 flat_cols = [];
 if isfield(prof,'flat_configs') && ~isempty(prof.flat_configs)
     flat_cols = unique(prof.flat_configs(:)).';
 end
+% A flat config is anchored at ONE primary value; what it would mean on a
+% grid (one anchor per secondary value? one for the whole grid?) is a design
+% question with no obviously right answer, so the combination is refused
+% rather than guessed at.
+if has_secondary && ~isempty(flat_cols)
+    error("build_point_params:flatConfigsWithSecondary", ...
+        ['This profile declares both flat_configs and secondary_var. A ' ...
+         'flat config is anchored at a single primary value and has no ' ...
+         'defined meaning on a two-dimensional sweep. Use one or the ' ...
+         'other.']);
+end
+
 is_flat = ismember(config_idx, flat_cols);
 has_flat_defaults = isfield(prof,'flat_defaults') && ~isempty(prof.flat_defaults);
 
@@ -77,6 +123,11 @@ if isfield(prof,'vehicle_motion_settings')
 end
 if inject_primary
     parameters.(prof.primary_var) = primary_val;
+    % Injected BEFORE the config loop below, so that a config field of the
+    % same name still wins -- identical precedence to the primary variable.
+    if has_secondary
+        parameters.(prof.secondary_var) = secondary_val;
+    end
 end
 cfg = prof.configs{config_idx};
 fn = fieldnames(cfg);

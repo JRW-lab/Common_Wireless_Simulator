@@ -7,7 +7,9 @@ function result = cost_head(settings)
 %
 %   settings (from WirelessSimulator.buildSettings):
 %     profile_sel       index into saved_profiles()
-%     figure_statistic  "Runtime: estimator" or "Runtime: detector"
+%     figure_statistic  "Runtime: estimator", "Runtime: Hhat reconstruction",
+%                       "Runtime: estimator + Hhat", "Runtime: estimator
+%                       per call" or "Runtime: detector" (see STAGES)
 %                       ("FLOPs: ..." is reserved for the analytic-count
 %                       pipeline and is refused until that exists)
 %     num_frames        timed frames per point; 0 = render the newest
@@ -59,6 +61,24 @@ function result = cost_head(settings)
 % MATLAB sessions and idle pool workers are counted but not warned about.
 % Measure on an otherwise idle machine.
 %
+% STAGES (2026-10-15). Every timed frame records four things from the
+% sim_fun's frame_data, each summed over all estimator calls of the frame:
+%   est    t_ESTwall   the estimator calls alone
+%   hhat   t_HHATwall  turning each estimate into Hhat (build_HDD). Linear
+%                      in the path count, so it is what separates a sparse
+%                      estimator (DD-RELAX, <= Pmax paths) from a non-sparse
+%                      one (BEM, Yuan), which the est stage alone hides
+%   rx     t_RXwall    the detector calls
+%   ncall  n_ESTcalls  estimator calls in the frame; decoder-aided rounds
+%                      exit early, so this differs between arms
+% "estimator + Hhat" is est + hhat, the whole cost of channel estimation;
+% "estimator per call" is est / ncall. Saved measurements from before
+% 2026-10-15 have no hhat or ncall and render only the est and rx stages.
+%
+% ARMS WITH NO ESTIMATOR (Perfect CSI: no csi_settings) are left out of the
+% measurement and say so: they have no estimator stage to time, and their
+% sim_fun (sim_fun_ODDM_PTMMSE) does not report stage times.
+%
 % RESULTS are machine-specific, so they are NOT written to sim_lookup.
 % Each run is saved to Logs/runtime/<profile>_<host>_<stamp>.mat with every
 % raw sample, and the render path reads the newest one whose points still
@@ -94,11 +114,20 @@ pv = profile.primary_vals;
 nP = numel(pv); nC = numel(profile.configs);
 pts = struct('ip',{},'ic',{},'par',{},'hash',{});
 for ic = 1:nC
+    if ~isfield(profile.configs{ic}, 'csi_settings')
+        fprintf('  %s: no estimator (no csi_settings), not timed.\n', ...
+            string(profile.legend_vec{min(ic, end)}));
+        continue;
+    end
     for ip = 1:nP
         [par, h, ok] = build_point_params(profile, pv(ip), ic);
         if ~ok, continue; end
         pts(end+1) = struct('ip',ip,'ic',ic,'par',par,'hash',string(h)); %#ok<AGROW>
     end
+end
+if isempty(pts)
+    error("cost_head:noEstimatorArms", ...
+        'Profile "%s" has no arm with an estimator, so there is nothing to time.', pname);
 end
 
 num_frames = 0;
@@ -160,6 +189,9 @@ end
 function [kind, stage] = parse_statistic(stat)
 switch stat
     case "Runtime: estimator", kind = "runtime"; stage = "est";
+    case "Runtime: Hhat reconstruction", kind = "runtime"; stage = "hhat";
+    case "Runtime: estimator + Hhat",    kind = "runtime"; stage = "esthhat";
+    case "Runtime: estimator per call",  kind = "runtime"; stage = "estcall";
     case "Runtime: detector",  kind = "runtime"; stage = "rx";
     case "FLOPs: estimator",   kind = "flops";   stage = "est";
     case "FLOPs: receiver",    kind = "flops";   stage = "rx";
@@ -177,6 +209,7 @@ sub = {'Meta Functions', fullfile('Common-Wireless-Infrastructure','Meta Functio
     'Comm Functions/OTFS-DD Functions', 'Comm Functions/ODDM Functions', ...
     'Comm Functions/ODDM Functions/DD-RELAX-paper', 'Comm Functions/TODDM Functions', ...
     'Comm Functions/TX RX Functions', 'Comm Functions/Coding Functions'};
+sub = sub(cellfun(@(d) isfolder(fullfile(cws, d)), sub));   % DD-RELAX-paper is not in the public repo
 for k = 1:numel(sub), addpath(fullfile(cws, sub{k})); end
 end
 
@@ -195,7 +228,7 @@ end
 fprintf('\n================ RUNTIME MEASUREMENT UNDERWAY ================\n');
 fprintf('  Profile        : %s\n', pname);
 fprintf('  Points         : %d, each timed over %d frame(s) after 1 warm-up frame\n', nPts, nTimed);
-fprintf('  Recording      : estimator and detector wall time per frame\n');
+fprintf('  Recording      : estimator, Hhat reconstruction and detector wall time per frame\n');
 fprintf('  Machine        : %s, %d computation threads\n', host, maxNumCompThreads);
 if nBusy > 0
     fprintf('  WARNING        : %d other MATLAB process(es) are using CPU right now\n', nBusy);
@@ -210,18 +243,19 @@ t_warm = tic;
 for k = 1:nPts
     status(sprintf('Warm-up %d/%d', k, nPts), 0);
     [~, fd] = run_sim_fun(1, pts(k).par);
-    if ~isfield(fd,'t_ESTwall') || ~isfield(fd,'t_RXwall')
+    if ~all(isfield(fd, {'t_ESTwall','t_RXwall','t_HHATwall','n_ESTcalls'}))
         error("cost_head:noWallTimes", ...
             ['The simulation function for config %d of "%s" does not report ' ...
-             'wall-clock stage times (frame_data.t_ESTwall / t_RXwall). ' ...
-             'Only the SP-LDPC sim_fun has them so far; add the two ' ...
-             'timers to that sim_fun the same way before benchmarking it.'], ...
+             'wall-clock stage times (frame_data.t_ESTwall / t_HHATwall / ' ...
+             't_RXwall / n_ESTcalls). Only the SP-LDPC sim_fun has them so ' ...
+             'far; add the same timers to that sim_fun before benchmarking it.'], ...
             pts(k).ic, pname);
     end
 end
 fprintf('Warm-up done in %.0f s. Timing %d round(s) of %d points.\n', toc(t_warm), nTimed, nPts);
 
 est = nan(nPts, nTimed); rx = nan(nPts, nTimed); tot = nan(nPts, nTimed);
+hhat = nan(nPts, nTimed); ncall = nan(nPts, nTimed);
 order = zeros(nTimed, nPts);
 shuffle = RandStream('mt19937ar', 'Seed', 20261013);   % order only, not the frames
 seed0 = 1e6;
@@ -238,6 +272,8 @@ for r = 1:nTimed
         tot(k,r) = toc(t0);
         est(k,r) = fd.t_ESTwall(1);
         rx(k,r)  = fd.t_RXwall(1);
+        hhat(k,r)  = fd.t_HHATwall(1);
+        ncall(k,r) = fd.n_ESTcalls(1);
     end
     el = toc(t_all);
     msg = sprintf('Round %d/%d (%d points each) - about %.0f s left', ...
@@ -264,6 +300,8 @@ result.ip        = [pts.ip].';
 result.hash      = [pts.hash].';
 result.est       = est;      % s, per point x round
 result.rx        = rx;
+result.hhat      = hhat;     % s, Hhat reconstruction (build_HDD)
+result.ncall     = ncall;    % estimator calls per frame
 result.total     = tot;      % whole sim_fun call, for reference only
 end
 
@@ -311,7 +349,18 @@ error("cost_head:staleMeasurement", ...
 end
 
 function [med, lo, hi] = stats(result, stage)
-X = result.(stage) * 1e3;    % ms
+if any(stage == ["hhat","esthhat","estcall"]) && ~isfield(result, 'hhat')
+    error("cost_head:noHhatStage", ...
+        ['The saved measurement %s predates the Hhat-reconstruction timer ' ...
+         '(2026-10-15) and has only the estimator and detector stages. ' ...
+         'Run a new measurement.'], result.file);
+end
+switch stage
+    case "esthhat", X = result.est + result.hhat;
+    case "estcall", X = result.est ./ result.ncall;
+    otherwise,      X = result.(stage);
+end
+X = X * 1e3;    % ms
 med = median(X, 2); lo = prctile_(X, 25); hi = prctile_(X, 75);
 end
 
@@ -324,7 +373,13 @@ q = X(:, a) .* (1 - f) + X(:, b) .* f;
 end
 
 function lbl = stage_label(stage)
-if stage == "est", lbl = "Channel estimator"; else, lbl = "Detector (PT-MMSE)"; end
+switch stage
+    case "est",     lbl = "Channel estimator";
+    case "hhat",    lbl = "Hhat reconstruction";
+    case "esthhat", lbl = "Estimator + Hhat";
+    case "estcall", lbl = "Estimator, per call";
+    otherwise,      lbl = "Detector (PT-MMSE)";
+end
 end
 
 function print_summary(result, profile, stage)
@@ -368,7 +423,9 @@ end
 set(gca, 'YScale', 'log', 'FontSize', 12, 'TickLabelInterpreter', 'latex');
 xlabel(string(result.primary_var), 'Interpreter', 'none');
 ylabel(stage_label(stage) + " wall time per frame (ms)");
-lg = string(profile.legend_vec(1:numel(hs)));
+% By config index, not position: arms with no estimator are not timed, so
+% the first plotted config need not be config 1.
+lg = arrayfun(@(ic) string(profile.legend_vec{min(ic, end)}), unique(result.ic).');
 loc = 'best';
 if isfield(settings,'legend_loc') && ~isempty(settings.legend_loc), loc = settings.legend_loc; end
 legend(hs, lg, 'Interpreter', 'latex', 'Location', loc);

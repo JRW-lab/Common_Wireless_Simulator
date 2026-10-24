@@ -1,4 +1,4 @@
-function [uhat, niter, ok] = ldpc_decode_manual(Lc, llr, max_iters, alpha)
+function [uhat, niter, ok, appLlr] = ldpc_decode_manual(Lc, llr, max_iters, alpha)
 %LDPC_DECODE_MANUAL  Normalized min-sum belief-propagation LDPC decoding.
 %   HAND-CODED, no Communications Toolbox (2026-09-29 user direction).
 %
@@ -8,6 +8,20 @@ function [uhat, niter, ok] = ldpc_decode_manual(Lc, llr, max_iters, alpha)
 %                (standard): llr > 0 => bit more likely 0, llr < 0 =>
 %                bit more likely 1 (matches log(P(0)/P(1))).
 %     max_iters  maximum BP iterations
+%   FOURTH OUTPUT (added 2026-10-05, for turbo equalisation):
+%     appLlr     N x numCW A-POSTERIORI per-bit LLRs from the final BP
+%                iteration, same sign convention as `llr` (>0 => bit 0).
+%                This is the decoder's full belief, INCLUDING the channel
+%                LLR that was fed in. A turbo loop must NOT feed this
+%                straight back to the equaliser: that returns the
+%                equaliser's own information to it and double-counts it,
+%                the classic positive-feedback failure that makes turbo
+%                schemes stall or diverge with overconfident LLRs. The
+%                EXTRINSIC information is `appLlr - llr` (equivalently
+%                the sum of the incoming check-node messages), and that
+%                is what must be fed back. Returned as APP rather than
+%                extrinsic so the caller keeps both; existing 3-output
+%                callers are unaffected.
 %     alpha      normalized min-sum scaling factor, default 0.75 (the
 %                standard practical correction for min-sum's known
 %                overconfidence relative to exact sum-product -- see
@@ -99,6 +113,7 @@ for iter = 1:max_iters
     end
 end
 
+appLlr = total;   % a-posteriori LLRs from the final iteration; see header
 uhat = bits(1:Lc.K, :);
 if ~exist('ok', 'var')
     ok = false(1, numCW);

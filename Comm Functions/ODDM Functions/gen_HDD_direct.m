@@ -1,59 +1,60 @@
 function [H,L1,L2,Phi_i,tau_i,v_i] = gen_HDD_direct(T,N,M,Fc,v,Q,Ambig_Table,t_offset,CP,chan)
-% This generates the delay-Doppler channel matrix for an ODDM system.
+%GEN_HDD_DIRECT  ODDM delay-Doppler channel matrix from the cross-ambiguity
+%   table (CWS's native channel route).
 %
-% Optimised 2026-09-21. Output is BIT-IDENTICAL to the previous version
-% (isequal, maxdiff exactly 0) across N=16/32, M=64/128, v=40/120/500,
-% Q=2/4 -- verified by collectors/verify_genHDD_fast.m against
-% gen_HDD_direct_slowref.m, which is a mechanical copy of the pre-optimisation
-% code kept solely for that regression. Measured 3.0x to 8.0x faster.
+%   [H,L1,L2,Phi_i,tau_i,v_i] = gen_HDD_direct(T,N,M,Fc,v,Q,Ambig_Table,t_offset,CP)
+%   [H,L1,L2,Phi_i,tau_i,v_i] = gen_HDD_direct(..., chan)
 %
-% Bit-identity is the requirement, not 'close enough': this function
-% produced tens of thousands of already-collected frames, and code is not
-% part of the param_hash, so any change in output would silently average
-% different physics into existing rows instead of starting new ones.
+%   PURPOSE. Draws an EVA channel realisation (or takes the one given in
+%   chan) and builds the DD channel matrix H of the CP-Free ODDM model,
+%       h_{m,n}[l,k] = e^{-j2pi nm/(NM)} sum_i Phi_i e^{j2pi(v_i + nF0)(lTs - tau_i + t_offset)}
+%                      * A((l-m)Ts + t_offset - tau_i, (k-n)F0 - v_i)
+%   with A the cross-ambiguity function read from Ambig_Table by spline
+%   interpolation. Row l*N + k + 1 and column m*N + n + 1 (delay-major,
+%   Doppler fastest, Doppler bins n, k = 0..N-1), shifted by the CP rows
+%   when CP is on. Only delay offsets l - m in the channel's delay support
+%   (L1, L2) are filled. Used by the perfect-CSI and the CWS-native
+%   estimated-CSI ODDM sim_funs (notes S1).
 %
-% Coded by Jeremiah Rhys Wimer, 2/27/2025
+%   INPUTS
+%     T            symbol duration (s); Ts = T/M, F0 = 1/(N*T).
+%     N, M         Doppler and delay bins.
+%     Fc           carrier frequency (Hz).
+%     v            maximum UE speed (km/h), for channel_generation.
+%     Q            pulse truncation (symbol periods), sets L1 and L2.
+%     Ambig_Table  struct with vals, t_range, f_range, from
+%                  gen_DD_cross_ambig_table for the same N, M, T, v, pulse.
+%     t_offset     timing (synchronisation) offset (s); must stay below one
+%                  delay bin (notes S5).
+%     CP           true adds the L1 + L2 CP delay rows and columns.
+%     chan         optional {Phi_i, tau_i, v_i}: use this channel instead of
+%                  drawing one (for paired and bit-identity checks).
 %
-% Optional 10th argument `chan` = {Phi_i,tau_i,v_i} injects a channel
-% realisation instead of drawing one, so the output can be compared
-% bit-for-bit against the original on the SAME channel. Omit it in
-% production and it draws exactly as the original does.
+%   OUTPUTS
+%     H                    ((M + M_cp)*N)-square complex channel matrix.
+%     L1, L2               delay support, L1 = Q + 1,
+%                          L2 = Q + 1 + floor(max(tau_i)/Ts).
+%     Phi_i, tau_i, v_i    path gains, delays (s) and Doppler shifts (Hz).
 %
-% ---------------------------------------------------------------------
-% WHAT WAS SLOW, measured at N=32/M=128 (2 frames, MATLAB profiler):
-%   gen_HDD_direct   16.38 s   of which
-%     interp2         9.15 s
-%     combvec         4.69 s
+%   LIMITS. A query outside the ambiguity table is an error, never a zero
+%   (notes S5). The output must stay bit-identical: this function produced
+%   the stored perfect-CSI frames, and code is not part of param_hash
+%   (notes S2).
 %
-% (1) combvec built the FULL cross product of (m,n,l,k) and then discarded
-%     ~89% of it. At N=32/M=128 that is 128*32*128*32 = 16,777,216 rows of
-%     4 doubles -- a 537 MB allocation -- filtered down to the ~1.9M rows
-%     whose (l-m) lies in L_range. The valid set can be generated directly:
-%     l is simply m + delta for each delta in L_range, so nothing invalid is
-%     ever created. Cost scales as (M*N)^2, which is why this exploded when
-%     M went 64 -> 128 (4x the grid, 16x the combinations).
-%
-% (2) interp2 was evaluated at ~1.9M x Np query points, but those points
-%     take only |L_range| x (2N-1) x Np DISTINCT values -- about 16,000 at
-%     this configuration. The delay coordinate depends on (l-m) only and the
-%     Doppler coordinate on (k-n) only, so the same handful of (t,f) pairs
-%     were being spline-interpolated over a thousand times each. Evaluating
-%     the unique set once and gathering from it is arithmetically identical:
-%     interp2 is pointwise in the query, so a query's value does not depend
-%     on which other queries accompany it.
-%
-% NEITHER CHANGE TOUCHES THE NUMERICS. The same interp2('spline') on the
-% same grid produces the same doubles; the combo set is the same set; and
-% H(linear_indices) = h is order-independent because every (m,n,l,k) maps to
-% a distinct (row,col). That matters: gen_HDD_direct is what produced tens of
-% thousands of already-collected perfect-CSI frames, and code is NOT part of
-% the param_hash, so a change that altered results would silently blend
-% different physics into existing rows rather than starting a new one.
-% Equality is verified against the original in
-% collectors/verify_genHDD_fast.m -- do not deploy this on the strength of
-% the reasoning above alone.
-% ---------------------------------------------------------------------
+%   REFERENCES
+%     Common Wireless Simulator/References/CP-Free ODDM.pdf: Sec. II,
+%       Sec. III-A (Corollary III.1, delay support) and III-B (Prop. III.2,
+%       block channel matrix), Eqs. (10)-(11), (14)-(15), (17)-(19),
+%       PDF pp. 4-6.
+%   Written by Jeremiah Rhys Wimer, 2/27/2025; optimised 2026-09-21.
+%   Reasons, measurements and history are in notes/gen_HDD_direct_NOTES.md,
+%   cited below as (notes Sn).
 
+%% ===== 1. CHANNEL AND DELAY SUPPORT ==================================
+% Draws or takes the channel, and sets the delay support and the index
+% ranges (notes S1).
+
+% Ambiguity table, delay and Doppler resolutions.
 ambig_vals    = Ambig_Table.vals;
 ambig_t_range = Ambig_Table.t_range;
 ambig_f_range = Ambig_Table.f_range;
@@ -61,12 +62,14 @@ ambig_f_range = Ambig_Table.f_range;
 Ts = T / M;
 F0 = 1 / (N*T);
 
+% Injected channel, or an EVA draw.
 if nargin >= 10 && ~isempty(chan)
     Phi_i = chan{1}; tau_i = chan{2}; v_i = chan{3};
 else
     [Phi_i,tau_i,v_i] = channel_generation(Fc,v);
 end
 
+% Delay support: central [-L1, L2] plus the two wrap-around segments.
 L1 = Q + 1;
 L2 = Q + 1 + floor(max(tau_i) / Ts);
 
@@ -75,6 +78,7 @@ range2 = -L1:L2;
 range3 = M - (L1:-1:1);
 L_range = [range1, range2, range3].';
 
+% Delay index range (negative m are CP rows) and Doppler ranges.
 if CP
     M_cp = L1+L2;
 else
@@ -84,15 +88,15 @@ m_range = -M_cp:(M-1);
 n_range = 0:(N-1);
 k_range = 0:(N-1);
 
-% ---- (1) generate ONLY the valid (m,n,l,k) combos ----------------------
-% The original formed every combination and kept those with (l-m) in
-% L_range. Here l is constructed as m+delta, so only valid ones exist. The
-% ordering below reproduces combvec's: it varies m fastest, then n, then l,
-% then k. Order does not affect H (indices are unique) but keeping it makes
-% the outputs directly comparable element-by-element during verification.
+%% ===== 2. VALID INDEX COMBINATIONS ===================================
+% Generates only the (m,n,l,k) whose delay offset l - m lies in the
+% support, in the original combvec order, instead of forming every
+% combination and discarding most (notes S3).
+
+% Range sizes.
 nM = numel(m_range); nN = numel(n_range); nK = numel(k_range);
 
-% All (m,l) pairs with l-m in L_range and l inside l_range.
+% All (m,l) pairs with l - m in the support and l inside the frame.
 mm = repmat(m_range(:), numel(L_range), 1);
 dd = repelem(L_range(:), nM, 1);
 ll = mm + dd;
@@ -100,86 +104,69 @@ valid = ll >= m_range(1) & ll <= m_range(end);
 mm = mm(valid); ll = ll(valid);
 nPairs = numel(mm);
 
-% Expand over n and k. combvec order is m fastest, then n, then l, then k --
-% but m and l are coupled here, so expand the (m,l) pair list over n and k
-% and sort at the end to match the original's ordering exactly.
+% Expand the (m,l) pairs over n and k.
 m = repmat(mm, nN*nK, 1);
 l = repmat(ll, nN*nK, 1);
 n = repmat(repelem(n_range(:), nPairs, 1), nK, 1);
 k = repelem(k_range(:), nPairs*nN, 1);
 
-% ---- (2) interp2 on the UNIQUE query points only -----------------------
-dlm = l - m;                       % delay offset, few distinct values
-dkn = k - n;                       % Doppler offset, few distinct values
+%% ===== 3. CROSS-AMBIGUITY VALUES =====================================
+% Interpolates the table once, at the distinct (delay offset, Doppler
+% offset, path) queries only, with a spline interpolant cached across calls,
+% then gathers the value for every combination (notes S3, S4, S5).
+
+% Distinct delay and Doppler offsets, and the number of paths.
+dlm = l - m;
+dkn = k - n;
 [dlm_u, ~, idl] = unique(dlm);
 [dkn_u, ~, idk] = unique(dkn);
 Np = numel(tau_i);
 A = numel(dlm_u); B = numel(dkn_u);
 
-% The query set is (dlm_u x dkn_u x tap) = A*B*Np points, about 16k here
-% against ~17M in the original. TWO THINGS MATTER, both learned the hard way
-% by a first attempt that came out SLOWER than the original:
-%
-%  - ONE interp2 call, not one per tap. interp2('spline') builds an
-%    interpolant over the whole ambiguity grid on every call, and that build
-%    dominates: looping over the 9 taps rebuilt it 9 times and cost more
-%    than removing combvec saved (0.82x, i.e. a net slowdown).
-%  - Query points passed as a flat COLUMN, not a meshgrid. interp2 takes a
-%    different code path for gridded queries and returns last-bit-different
-%    doubles (~1e-16). Numerically irrelevant, but this function's output
-%    feeds rows that already hold tens of thousands of collected frames, so
-%    "different in the last bit" is still different. Scattered-vector input
-%    reproduces the original exactly.
-tq = dlm_u(:)*Ts + t_offset;                 % A x 1, before per-tap shift
-fq = dkn_u(:)*F0;                            % B x 1, before per-tap shift
-TQ = repmat(tq, B*Np, 1);                    % vary dlm fastest
+% One flat column of A*B*Np queries, delay offset fastest, shifted per path (notes S4).
+tq = dlm_u(:)*Ts + t_offset;
+fq = dkn_u(:)*F0;
+TQ = repmat(tq, B*Np, 1);
 FQ = repmat(repelem(fq, A, 1), Np, 1);
 tapsh = repelem((1:Np).', A*B, 1);
 TQ = TQ - reshape(tau_i(tapsh), [], 1);
 FQ = FQ - reshape(v_i(tapsh),   [], 1);
 
-% THE DOMINANT REMAINING COST WAS THE SPLINE SETUP, NOT THE QUERIES.
-% After deduplicating to ~16k query points, interp2 still took 3.65 s per
-% call while makegriddedinterp showed only 0.03 s -- because interp2('spline')
-% fits spline coefficients across the ENTIRE ambiguity grid every time it is
-% called, and that work is independent of how many points you ask for. The
-% grid is fixed for a whole sim_fun run (it is built once, before the frame
-% loop); only tau_i and v_i change per frame. So the fit was being redone
-% identically on every frame and thrown away.
-%
-% Cached in a persistent interpolant, keyed on the grid axes and the value
-% array's size and corner/centre samples -- cheap to compare, and any real
-% change to the table changes them. Persistent state is per-process, and
-% every collector worker is its own process, so there is no cross-worker
-% leakage. Verified bit-identical to interp2 in verify_genHDD_fast.m.
+% Spline interpolant cached per table; the {f,t} order and the transpose match interp2 bit for bit (notes S4).
 persistent CACHE_F CACHE_KEY
 key = {ambig_t_range(:).', ambig_f_range(:).', size(ambig_vals), ...
        ambig_vals(1), ambig_vals(end), ambig_vals(ceil(end/2))};
-% AXIS ORDER AND THE TRANSPOSE ARE LOAD-BEARING. interp2 internally builds
-% its interpolant over {X,Y} with the value array TRANSPOSED and evaluates
-% F(Xq,Yq). Building it the "natural" way instead -- {t,f} with V untransposed
-% -- gives answers that differ in the last bit (~1e-16), because the spline
-% coefficients are fitted along the other dimension first. Measured: the
-% transposed form is isequal to interp2 with maxdiff exactly 0; the natural
-% form is not. Do not "tidy" this into the more readable ordering.
 if isempty(CACHE_KEY) || ~isequal(key, CACHE_KEY)
     CACHE_F   = griddedInterpolant({ambig_f_range, ambig_t_range}, ...
                                    ambig_vals.', 'spline', 'none');
     CACHE_KEY = key;
 end
 tbl = CACHE_F(FQ, TQ);
-tbl(isnan(tbl)) = 0;        % interp2's extrapval=0 behaviour
 
-% Gather. The (dlm,dkn) part of the index is tap-independent, so compute it
-% once and stride by A*B per tap rather than recomputing sub2ind Np times.
+% Refuse a query outside the table rather than zero it (notes S5).
+if any(isnan(tbl))
+    error("gen_HDD_direct:queryOutsideTable", ...
+        ['%d of %d cross-ambiguity queries fall outside the table (queries span %.4g to %.4g Ts and %.4g to %.4g F0; ' ...
+         'the table spans %.4g to %.4g Ts and %.4g to %.4g F0). The table is not small at its edges, so a zero here ' ...
+         'would be a wrong channel. Check that |t_offset| is below one delay bin, that N <= M, and that the table ' ...
+         'was built for this N, M, T, v and pulse.'], sum(isnan(tbl)), numel(tbl), min(TQ)/Ts, max(TQ)/Ts, ...
+        min(FQ)/F0, max(FQ)/F0, ambig_t_range(1)/Ts, ambig_t_range(end)/Ts, ambig_f_range(1)/F0, ambig_f_range(end)/F0);
+end
+
+% Gather: the (delay, Doppler) index is path-independent, strided by A*B per path.
 base = idl(:) + (idk(:)-1)*A;
 ambig_inst = tbl(base + (0:Np-1)*A*B);
 
-% ---- assembly, unchanged ----------------------------------------------
+%% ===== 4. ASSEMBLY ===================================================
+% Sums the paths for every valid (m,n,l,k) and writes each value to its
+% own (row, column) of H.
+
+% h_{m,n}[l,k] summed over paths (one column per path).
 h_sum = exp(-1j.*2.*pi.*n.*m./(N.*M)) .* Phi_i .* ...
         exp(1j.*2.*pi.*(v_i + n.*F0).*(l.*Ts-tau_i+t_offset)) .* ambig_inst;
 h = sum(h_sum,2);
 
+% Rows l*N + k + 1 and columns m*N + n + 1, shifted past the CP rows.
 H = zeros(nM*nN);
 H_index1 = l*N + k+1 - min(m_range)*N;
 H_index2 = m*N + n+1 - min(m_range)*N;

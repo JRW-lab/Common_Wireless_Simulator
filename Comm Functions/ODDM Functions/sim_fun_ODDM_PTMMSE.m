@@ -1,250 +1,211 @@
-function [metrics,frame_data] = sim_fun_ODDM_PTMMSE(new_frames,parameters)
-% Partitioned Time-Domain MMSE receiver for CP-Free ODDM -- the detector
-% specified in Section V / Algorithm 2 of the DD-RELAX paper (the
-% 2026-09-16 revision that first published it; see the sibling
-% `ODDM estimation paper` project, sim/src/equalizer_ptmmse.m, from which
-% equalizer_ptmmse.m here was copied verbatim).
+function [metrics,frame_data] = sim_fun_ODDM_PTMMSE(new_frames,parameters,run_opts)
+%SIM_FUN_ODDM_PTMMSE  CP-free ODDM with the partitioned time-domain MMSE
+%   (PT-MMSE) detector: the perfect-CSI reference, and the dispatcher for
+%   the estimated-CSI methods that share that detector.
 %
-% WHY THIS PROFILE EXISTS. The sibling project reproduces that paper's
-% Figure 3, whose DASHED perfect-CSI reference it pulls from THIS project
-% (fetch_cws_perfect_ber*.m). The paper is explicit (Sec. V opening) that
-% Section V's receiver is used with "the reconstructed channel matrix Hhat
-% ... OR THE TRUE H FOR A PERFECT-CSI BENCHMARK" -- i.e. the SAME detector
-% produces both curves. Once the sibling switched its own DD-RELAX curve
-% to equalizer_ptmmse, a perfect-CSI reference produced by CWS's
-% SIC-MMSE (Profile 1's old receiver) or CMC-MMSE (its current one)
-% became an apples-to-oranges comparison: measured directly, the sibling's
-% ESTIMATED-CSI BER came out BELOW CWS's PERFECT-CSI BER at v=40 and
-% v=500, which is impossible with a matched receiver and is exactly the
-% "perfect CSI worse than estimated CSI" anomaly this project has chased
-% before. This sim_fun exists so the dashed line can be produced by the
-% same detector as the solid one.
+%   [metrics, frame_data] = sim_fun_ODDM_PTMMSE(new_frames, parameters)
+%   [metrics, frame_data] = sim_fun_ODDM_PTMMSE(new_frames, parameters, run_opts)
 %
-% RELATIONSHIP TO sim_fun_ODDM_SIC_MMSE.m. That function has to reindex
-% delay-major -> Doppler-major (`perm`) and apply the Kronecker-DFT
-% similarity transform K'*HDD*K, because equalizer_SIC_MMSE.m consumes a
-% genuinely TIME-domain channel. equalizer_ptmmse.m instead consumes the
-% DD-domain channel directly (CWS's own native delay-major layout, index =
-% delay*N + Doppler + 1) and performs its own P = I_M kron F_N^H transform
-% internally, so NONE of that marshalling is needed here -- this file is
-% deliberately the simpler of the two. Verified: CWS's gen_HDD_direct.m
-% layout is identical to the sibling's build_HDD.m layout, which is what
-% equalizer_ptmmse.m was written against.
+%   PURPOSE. Two jobs, selected by parameters.csi_settings.method.
+%     1. DISPATCH. Any method other than "none" is handed to its own
+%        sim_fun and this file returns its result unchanged: "DD-RELAX",
+%        "DD-RELAX-L", "SP-LDPC", "DT-MUSIC", "DT-MUSIC-WIN", "OMP" and
+%        "SAGE". An unknown method is refused (notes S4).
+%     2. PERFECT CSI (method absent or "none"). Simulates new_frames frames
+%        in which the receiver is handed the TRUE DD channel matrix. Each
+%        frame:
+%          a. draws QPSK or BPSK data, LDPC-coded and optionally interleaved
+%             when ldpc_settings is enabled, with an optional zero-padding
+%             guard in the last L delay bins;
+%          b. draws an EVA channel and builds the DD channel matrix with
+%             gen_HDD_direct from the cached cross-ambiguity table;
+%          c. adds white Gaussian noise in the DD domain;
+%          d. detects with equalizer_ptmmse (paper Sec. V, Algorithm 2)
+%             using the true channel;
+%          e. counts raw errors and, with LDPC, decodes and counts coded
+%             errors.
+%   It is the same detector the estimated-CSI methods use, so the dashed
+%   perfect-CSI curve and the solid estimated curves differ only in the
+%   channel the detector is given (notes S1, S2).
 %
-% NOISE CONVENTION. sim_fun_ODDM_SIC_MMSE.m adds its noise in the TIME
-% domain (y = G_full*s + w). Here it is added in the DD domain
-% (yDD = HDD*xDD + w). These are equivalent: P is unitary, so white noise
-% of variance N0 in one domain is white noise of variance N0 in the other.
-% The same ((N+2)/N) CP-free scaling of N0 is used, unchanged.
+%   INPUTS
+%     new_frames  number of frames to simulate.
+%     parameters  point struct from build_point_params: CP, T, M, N, Q,
+%                 alpha, shape, Fc, vel, M_ary, EbN0, max_timing_offset,
+%                 optional sic_iters (older name N_iters, default 8),
+%                 zero_pad (default false), ebn0_ref (default "infobit"),
+%                 csi_settings (method and, for the estimated-CSI methods,
+%                 their own settings) and ldpc_settings.
+%     run_opts    optional and never hashed. run_opts.stage is only
+%                 supported as "full" here (other stages belong to
+%                 SP-LDPC); run_opts.frame_seed = struct(seed_base,
+%                 k_start) draws frame f from the Phase 3 frame streams.
+%
+%   OUTPUTS
+%     metrics     batch averages written to sim_lookup: BER, SER, FER, Thr,
+%                 t_ESTcpufull, t_ESTcpuiter (both 0 here), t_RXcpufull,
+%                 t_RXcpuiter, RX_iters, t_RXiter, t_RXfull; with LDPC also
+%                 BER_info, LDPC_conv, FER_info, CWER, Thr_coded and
+%                 Thr_coded_cw.
+%     frame_data  per-frame values for metrics_aux and frame logs; with
+%                 frame streams also the chan_fp, data_fp, noise_fp
+%                 fingerprints.
+%
+%   LIMITS. CP-free only. M_ary 2 or 4, and the LDPC layer is QPSK only
+%   (qpsk_soft_symbols). Shapes "rrc", "rect" (forces Q = 1, alpha = 1)
+%   and "sinc" (forces alpha = 1); "rrc" and "sinc" need an even Q
+%   (gen_DD_cross_ambig_table). The cross-ambiguity table covers a timing
+%   offset below one delay bin and N <= M; anything else is refused
+%   (notes S17).
+%
+%   REFERENCES
+%     ODDM estimation paper/main - UPDATE 1.pdf, Sec. V and Algorithm 2
+%       (PT-MMSE detection; perfect-CSI benchmark uses the true H).
+%     notes/AMBIGUITY_TABLE_AUDIT.md (why this file was added, and the
+%       ambiguity-table accuracy history).
+%   Why each design choice was made, and its history, are in
+%   notes/sim_fun_ODDM_PTMMSE_NOTES.md; comments below cite that file as
+%   (notes Sn).
 
-% Make parameters
-fields = fieldnames(parameters);
-for i = 1:numel(fields)
-    eval([fields{i} ' = parameters.(fields{i});']);
-end
+% Persistent LDPC code cache of the perfect-CSI path (a top-level statement, per Code Analyzer)
+persistent LcCachePerfectMap
 
-% Channel-estimation method selection (2026-09-18), mirroring
-% sim_fun_ODDM_SIC_MMSE.m's existing csi_settings convention exactly:
-% absent or method="none" -> perfect CSI, the entire rest of this file
-% unchanged (so Profile 4's hash and its already-accumulated 5000
-% frames/point are completely unaffected); method="DD-RELAX" -> delegate
-% to the estimated-CSI path. A perfect-CSI profile and an
-% estimated-CSI profile therefore differ by exactly one field.
+%% ===== 1. METHOD DISPATCH ============================================
+% Reads csi_settings.method, refuses run options and flags the selected
+% method cannot honour, and hands every estimated-CSI method to its own
+% sim_fun. Only method "none" (perfect CSI) continues past this section
+% (notes S4-S7).
+
+% Method absent means perfect CSI (notes S4).
 if isfield(parameters,'csi_settings')
     csi_settings = parameters.csi_settings;
 else
     csi_settings = struct('method',"none");
 end
+
+% Stage-limited frames exist only for SP-LDPC (notes S6).
+if nargin < 3 || isempty(run_opts), run_opts = struct('stage',"full"); end
+if isfield(run_opts,'stage') && string(run_opts.stage) ~= "full" ...
+        && csi_settings.method ~= "SP-LDPC"
+    error("sim_fun_ODDM_PTMMSE:stageNotSupported", ...
+        'run_opts.stage = "%s" is implemented only for csi_settings.method "SP-LDPC", not "%s".', ...
+        run_opts.stage, csi_settings.method);
+end
+
+% Frame streams exist for perfect CSI, SP-LDPC, DD-RELAX and DD-RELAX-L only (notes S6).
+if isfield(run_opts,'frame_seed') && ~isempty(run_opts.frame_seed) && ~any(csi_settings.method == ["none" "SP-LDPC" "DD-RELAX" "DD-RELAX-L"])
+    error("sim_fun_ODDM_PTMMSE:frameSeedNotSupported", ...
+        'run_opts.frame_seed is implemented for perfect CSI and SP-LDPC, DD-RELAX, DD-RELAX-L, not "%s".', csi_settings.method);
+end
+
+% apg_phase_fix is refused for any method not wired to apply it (notes S7).
+if isfield(csi_settings,'apg_phase_fix') && ~isempty(csi_settings.apg_phase_fix) ...
+        && logical(csi_settings.apg_phase_fix)
+
+    % Methods whose sim_fun forwards the flag to oddm_config.
+    wired = ["DD-RELAX","DD-RELAX-L","SP-LDPC"];
+    if ~any(csi_settings.method == wired)
+        error("sim_fun_ODDM_PTMMSE:apgFixNotWired", ...
+            ['csi_settings.apg_phase_fix=true is not supported for ' ...
+             'method "%s". Wired methods: %s. That path would ignore the ' ...
+             'flag while still hashing it, creating rows that claim the ' ...
+             'corrected model but contain the uncorrected one. Either ' ...
+             'remove the flag or wire that sim_fun to forward ' ...
+             'apg_phase_fix to oddm_config.'], ...
+            csi_settings.method, strjoin(wired, ', '));
+    end
+end
+
+% DD-RELAX: guard-isolated pilot, 2L-1 guard bins.
 if csi_settings.method == "DD-RELAX"
-    [metrics,frame_data] = sim_fun_ODDM_DDRELAX_PTMMSE(new_frames,parameters);
+    [metrics,frame_data] = sim_fun_ODDM_DDRELAX_PTMMSE(new_frames,parameters,run_opts);
     return;
-elseif csi_settings.method == "DD-RELAX-SI"
-    % REMOVED 2026-10-02. This was the first-draft, all-guard-free
-    % superimposed-pilot design (added 2026-09-28) -- confirmed broken
-    % (BER stuck at 11-18% even at gamma_p=100dB, a real detection-stage
-    % bug, NOT the modeled self-interference floor) and superseded the
-    % same day by "DD-RELAX-L" (L-guard) and later "DD-RELAX-SI-DA"
-    % (data-aided, all-guard-free), both still live below. The file
-    % itself (sim_fun_ODDM_DDRELAXSI_PTMMSE.m) was deleted along with
-    % this dispatch branch -- see ODDM Superimposed Pilot DD-RELAX
-    % /DEV_NOTES.md's 2026-09-28 entry for the original diagnosis and
-    % 2026-10-02 entry for the removal.
-    error("sim_fun_ODDM_PTMMSE:removedCsiMethod", ...
-        "csi_settings.method=""DD-RELAX-SI"" was removed 2026-10-02 " + ...
-        "(broken first draft, see DEV_NOTES.md) -- use ""DD-RELAX-L"" " + ...
-        "or ""DD-RELAX-SI-DA"" instead.");
+
+% DD-RELAX-L: L guard bins; the file must be on disk next to this one (notes S5).
 elseif csi_settings.method == "DD-RELAX-L"
-    % Added 2026-09-29. "L-guard" superimposed-pilot variant -- replaces
-    % the original all-guard-free design's own detection-stage bug (see
-    % the removed "DD-RELAX-SI" branch above and DEV_NOTES.md).
-    % Shrinks the guard+pilot band to L bins (= R_p itself, no isolation
-    % buffer) instead of either the baseline's 2L-1 or zero guard
-    % anywhere. See sim_fun_ODDM_DDRELAXL_PTMMSE.m's own header.
-    % DISTRIBUTION GUARD (2026-10-05). sim_fun_ODDM_DDRELAXL_PTMMSE.m belongs to the
-    % in-development superimposed-pilot line of work and is excluded from
-    % the public repository by .gitignore. The dispatch is therefore
-    % gated on the file being present ON DISK next to this one (not on
-    % the MATLAB path, which is a different and order-dependent
-    % question): on a working copy that
-    % has it, this behaves exactly as before; on a clone of the public
-    % repo it fails with an explanation instead of MATLAB's bare
-    % "Unrecognized function" error.
     if ~isfile(fullfile(fileparts(mfilename('fullpath')), 'sim_fun_ODDM_DDRELAXL_PTMMSE.m'))
         error("sim_fun_ODDM_PTMMSE:methodNotDistributed", ...
             "csi_settings.method=""DD-RELAX-L"" requires sim_fun_ODDM_DDRELAXL_PTMMSE.m, " + ...
             "which belongs to unpublished superimposed-pilot work and is not " + ...
             "included in this distribution.");
     end
-    [metrics,frame_data] = sim_fun_ODDM_DDRELAXL_PTMMSE(new_frames,parameters);
+    [metrics,frame_data] = sim_fun_ODDM_DDRELAXL_PTMMSE(new_frames,parameters,run_opts);
     return;
-elseif csi_settings.method == "DD-RELAX-SI-DA"
-    % Added 2026-09-29 (user/advisor direction: stay on the actual
-    % superimposed all-guard-free design, DD-RELAX-SI, not the L-guard
-    % variant). Data-aided (SIC) iterative refinement -- re-estimates the
-    % channel using the previous round's detected data symbols to cancel
-    % pilot-window interference, plus an optional hand-coded LDPC layer
-    % (csi_settings.ldpc). See sim_fun_ODDM_DDRELAXSIDA_PTMMSE.m's own
-    % header for the full algorithm.
-    % DISTRIBUTION GUARD (2026-10-05). sim_fun_ODDM_DDRELAXSIDA_PTMMSE.m belongs to the
-    % in-development superimposed-pilot line of work and is excluded from
-    % the public repository by .gitignore. The dispatch is therefore
-    % gated on the file being present ON DISK next to this one (not on
-    % the MATLAB path, which is a different and order-dependent
-    % question): on a working copy that
-    % has it, this behaves exactly as before; on a clone of the public
-    % repo it fails with an explanation instead of MATLAB's bare
-    % "Unrecognized function" error.
-    if ~isfile(fullfile(fileparts(mfilename('fullpath')), 'sim_fun_ODDM_DDRELAXSIDA_PTMMSE.m'))
+
+% SP-LDPC: superimposed pilot, data-aided rounds, LDPC; same on-disk rule (notes S4, S5).
+elseif csi_settings.method == "SP-LDPC"
+    if ~isfile(fullfile(fileparts(mfilename('fullpath')), 'sim_fun_ODDM_DDRELAXSI_PTMMSE.m'))
         error("sim_fun_ODDM_PTMMSE:methodNotDistributed", ...
-            "csi_settings.method=""DD-RELAX-SI-DA"" requires sim_fun_ODDM_DDRELAXSIDA_PTMMSE.m, " + ...
+            "csi_settings.method=""SP-LDPC"" requires sim_fun_ODDM_DDRELAXSI_PTMMSE.m, " + ...
             "which belongs to unpublished superimposed-pilot work and is not " + ...
             "included in this distribution.");
     end
-    [metrics,frame_data] = sim_fun_ODDM_DDRELAXSIDA_PTMMSE(new_frames,parameters);
+    [metrics,frame_data] = sim_fun_ODDM_DDRELAXSI_PTMMSE(new_frames,parameters,run_opts);
     return;
-elseif csi_settings.method == "DD-RELAX-SI-OP"
-    % Added 2026-09-29. Onion-peeling: a LAYERED, outside-in variant of
-    % the data-aided idea above, implementing
-    % `ODDM Superimposed Pilot DD-RELAX/SYSTEM_MODEL.md` Sec. 10 --
-    % cancels the pilot region's own interfering data blocks ordered by
-    % how much each one actually contributes to the self-interference
-    % floor (least first), rather than all at once. See
-    % sim_fun_ODDM_DDRELAXSIOP_PTMMSE.m's own header for the full
-    % algorithm and the open research question it exists to test.
-    % DISTRIBUTION GUARD (2026-10-05). sim_fun_ODDM_DDRELAXSIOP_PTMMSE.m belongs to the
-    % in-development superimposed-pilot line of work and is excluded from
-    % the public repository by .gitignore. The dispatch is therefore
-    % gated on the file being present ON DISK next to this one (not on
-    % the MATLAB path, which is a different and order-dependent
-    % question): on a working copy that
-    % has it, this behaves exactly as before; on a clone of the public
-    % repo it fails with an explanation instead of MATLAB's bare
-    % "Unrecognized function" error.
-    if ~isfile(fullfile(fileparts(mfilename('fullpath')), 'sim_fun_ODDM_DDRELAXSIOP_PTMMSE.m'))
-        error("sim_fun_ODDM_PTMMSE:methodNotDistributed", ...
-            "csi_settings.method=""DD-RELAX-SI-OP"" requires sim_fun_ODDM_DDRELAXSIOP_PTMMSE.m, " + ...
-            "which belongs to unpublished superimposed-pilot work and is not " + ...
-            "included in this distribution.");
-    end
-    [metrics,frame_data] = sim_fun_ODDM_DDRELAXSIOP_PTMMSE(new_frames,parameters);
-    return;
-elseif csi_settings.method == "DD-RELAX-SI-GLS"
-    % Added 2026-09-30, after CWS Profile 16 found SI-OP statistically
-    % indistinguishable from SI-DA (cancellation ORDER doesn't matter) --
-    % tests whether the ceiling both hit is instead set by SYSTEM_MODEL.md
-    % Sec. 7 option (a)'s scalar-noise approximation, replaced here with
-    % option (b)'s proper whitened matched filtering (dd_relax.m's new
-    % `W` parameter). See sim_fun_ODDM_DDRELAXSIGLS_PTMMSE.m's own header.
-    % DISTRIBUTION GUARD (2026-10-05). sim_fun_ODDM_DDRELAXSIGLS_PTMMSE.m belongs to the
-    % in-development superimposed-pilot line of work and is excluded from
-    % the public repository by .gitignore. The dispatch is therefore
-    % gated on the file being present ON DISK next to this one (not on
-    % the MATLAB path, which is a different and order-dependent
-    % question): on a working copy that
-    % has it, this behaves exactly as before; on a clone of the public
-    % repo it fails with an explanation instead of MATLAB's bare
-    % "Unrecognized function" error.
-    if ~isfile(fullfile(fileparts(mfilename('fullpath')), 'sim_fun_ODDM_DDRELAXSIGLS_PTMMSE.m'))
-        error("sim_fun_ODDM_PTMMSE:methodNotDistributed", ...
-            "csi_settings.method=""DD-RELAX-SI-GLS"" requires sim_fun_ODDM_DDRELAXSIGLS_PTMMSE.m, " + ...
-            "which belongs to unpublished superimposed-pilot work and is not " + ...
-            "included in this distribution.");
-    end
-    [metrics,frame_data] = sim_fun_ODDM_DDRELAXSIGLS_PTMMSE(new_frames,parameters);
-    return;
+
+% DT-MUSIC: single-frame Figure 7 baseline (notes S4).
 elseif csi_settings.method == "DT-MUSIC"
-    % Added 2026-09-22 (Figure 7 baseline). See sim_fun_ODDM_DTMUSIC_PTMMSE.m
-    % and est_dtmusic.m for why this curve is expected to sit near
-    % chance-level BER on this single-pilot frame -- a documented
-    % structural limitation, not a bug.
     [metrics,frame_data] = sim_fun_ODDM_DTMUSIC_PTMMSE(new_frames,parameters);
     return;
+
+% DT-MUSIC-WIN: sliding-window DT-MUSIC, the version Figure 7 ships (notes S4).
 elseif csi_settings.method == "DT-MUSIC-WIN"
-    % Added 2026-09-23. SLIDING-WINDOW DT-MUSIC, and the version Figure 7
-    % ships. It accumulates pilot-window observations across `nif` frames of
-    % a `fpt`-frame trial and solves MUSIC on the concatenated snapshots,
-    % where "DT-MUSIC" above estimates from a single frame.
-    %
-    % Measured against the single-frame estimator at Profile 5's own
-    % operating point (N=16 M=64 v=500 alpha=0.3 Q=4 EbN0=16 gamma_p=20),
-    % 5 paired blocks x 250 frames on common random numbers:
-    %   BER  7.2792e-2 -> 3.9363e-2   (-45.9%, paired t = 10.44 on 4 df)
-    %   RMSE 0.4295    -> 0.3347      (better in 5 of 5 blocks, t = 8.28)
-    % Both metrics agree and both clear the 20.9% block-to-block noise that
-    % sank two earlier variants on short runs. See notes/DTMUSIC_PORT_AUDIT.md.
-    %
-    % SEPARATE METHOD STRING, NOT A FLAG ON "DT-MUSIC". The two estimators
-    % produce different numbers, so they must never share a param_hash and
-    % blend into one running average.
     [metrics,frame_data] = sim_fun_ODDM_DTMUSICW_PTMMSE(new_frames,parameters);
     return;
+
+% OMP: on-grid greedy pursuit; its config must not carry NGS (notes S4).
 elseif csi_settings.method == "OMP"
-    % Added 2026-09-22 (Figure 7 baseline). Strictly on-grid greedy pursuit
-    % with a joint LS refit per step. NOTE: the OMP config must NOT carry an
-    % NGS field -- OMP has no iterative stage, so an NGS value could not
-    % change the result but WOULD enter param_hash and split one point
-    % across two rows. sim_fun_ODDM_OMP_PTMMSE.m rejects it rather than
-    % ignoring it.
     [metrics,frame_data] = sim_fun_ODDM_OMP_PTMMSE(new_frames,parameters);
     return;
+
+% SAGE: NGS is its number of refinement passes (notes S4).
 elseif csi_settings.method == "SAGE"
-    % Added 2026-09-22 (Figure 7 baseline). Unlike OMP, SAGE genuinely uses
-    % NGS -- it is the number of cyclic parameter-refinement passes in
-    % Fessler & Hero's own pseudocode -- so its config does carry one.
     [metrics,frame_data] = sim_fun_ODDM_SAGE_PTMMSE(new_frames,parameters);
     return;
+
+% Anything else, including the methods removed 2026-10-22, is refused (notes S4).
 elseif csi_settings.method ~= "none"
     error("sim_fun_ODDM_PTMMSE:unknownCsiMethod", ...
         "Unrecognized csi_settings.method: %s", csi_settings.method);
 end
+
+%% ===== 2. PARAMETERS AND FRAME GEOMETRY ==============================
+% Perfect-CSI path from here on. Reads the system parameters, fixes the
+% pulse shape, delay support, Eb/N0 reference, noise level, alphabet,
+% ambiguity table and guard layout (notes S8-S11).
+
+% System parameters, read explicitly (notes S8).
+CP = parameters.CP; T = parameters.T; M = parameters.M; N = parameters.N;
+Q = parameters.Q; alpha = parameters.alpha; shape = parameters.shape;
+Fc = parameters.Fc; vel = parameters.vel; M_ary = parameters.M_ary;
+EbN0 = parameters.EbN0; max_timing_offset = parameters.max_timing_offset;
+
+% Refuse a CP frame (notes S8).
 if CP
     error("sim_fun_ODDM_PTMMSE:cpFreeOnly", ...
         "PT-MMSE for ODDM requires CP-Free mode - the zero-padding guard is what bounds the delay support.")
 end
-if ~exist('sic_iters','var')
-    if exist('N_iters','var')
-        sic_iters = N_iters;
-    else
-        sic_iters = 8;
-    end
+
+% Refuse a timing offset or Doppler span the cross-ambiguity table cannot cover (notes S17).
+if abs(max_timing_offset) >= 1
+    error("sim_fun_ODDM_PTMMSE:timingOffsetOutsideTable", ...
+        "max_timing_offset = %g delay bins: the cross-ambiguity table covers offsets below one bin (notes S17).", max_timing_offset);
+end
+if N > M
+    error("sim_fun_ODDM_PTMMSE:dopplerOutsideTable", ...
+        "N = %d > M = %d: the cross-ambiguity table's Doppler range is sized by M, so it covers N <= M only (notes S17).", N, M);
 end
 
-% Define parameters (identical to sim_fun_ODDM_SIC_MMSE.m so the two are
-% directly comparable -- same guard width, same N0, same alphabet)
-res = 10;
-Es = 1;
-syms_per_f = M*N;
-Ts = T / M;
-L1 = Q + 1;
-L2 = Q + 1 + floor(2510*10^(-9) / Ts);
-L = L1 + L2;
-if L >= M
-    error("Settings can not satisfy the ambiguity assumption (zero-padding length L >= M).")
+% PT-MMSE inner iterations: sic_iters, or its older name N_iters, default 8.
+if isfield(parameters,'sic_iters')
+    sic_iters = parameters.sic_iters;
+elseif isfield(parameters,'N_iters')
+    sic_iters = parameters.N_iters;
+else
+    sic_iters = 8;
 end
-Eb = Es / log2(M_ary);
-N0 = Eb / (10^(EbN0 / 10)) * ((N+2)/N);
 
-% Add redundancy for rectangular and sinc pulses
+% Pulse shape first: rect forces Q = 1, which the delay support below depends on (notes S8).
 if shape == "rect"
     Q = 1;
     alpha = 1;
@@ -252,11 +213,53 @@ elseif shape == "sinc"
     alpha = 1;
 end
 
-% Data setup (same alphabets as sim_fun_ODDM_SIC_MMSE.m)
+% Table resolution, symbol energy and delay support L = L1 + L2, as in sim_fun_ODDM_SIC_MMSE.m.
+res = 10;
+Es = 1;
+syms_per_f = M*N;
+Ts = T / M;
+L1 = Q + 1;
+L2 = Q + 1 + floor(2510*10^(-9) / Ts);
+L = L1 + L2;
+
+% The delay support must fit inside the frame.
+if L >= M
+    error("Settings can not satisfy the ambiguity assumption (zero-padding length L >= M).")
+end
+ls = resolve_ldpc_settings(parameters, 416);
+
+% Eb from the Eb/N0 reference: per info bit (default) or per modulated bit (notes S9).
+if isfield(parameters,'ebn0_ref'), ebn0_ref = string(parameters.ebn0_ref); else, ebn0_ref = "infobit"; end
+switch ebn0_ref
+    case "infobit"
+
+        % Realised code rate R = K/N, or 1 without LDPC (notes S9).
+        if ls.enable
+            Mpar  = round(ls.N * (1 - ls.rate));
+            R_eff = (ls.N - Mpar) / ls.N;
+        else
+            R_eff = 1;
+        end
+        Eb = Es / (log2(M_ary) * R_eff);
+
+    % Per modulated bit, or refuse an unknown reference.
+    case "modbit"
+        Eb = Es / log2(M_ary);
+    otherwise
+        error("sim_fun_ODDM_PTMMSE:badEbN0Ref", ...
+            'parameters.ebn0_ref="%s" is not recognised (expected "infobit" or "modbit").', ebn0_ref);
+end
+
+% Noise variance with the CP-free (N+2)/N scaling (notes S3).
+N0 = Eb / (10^(EbN0 / 10)) * ((N+2)/N);
+
+% BPSK alphabet and bit labels, as in sim_fun_ODDM_SIC_MMSE.m.
 if M_ary == 2
     bit_order = [0;1];
     alphabet_set = linspace(1,M_ary,M_ary)';
     S = sqrt(Es) .* exp(-1j * 2*pi .* (alphabet_set) ./ M_ary);
+
+% QPSK alphabet and bit labels, as in sim_fun_ODDM_SIC_MMSE.m.
 elseif M_ary == 4
     bit_order = [0,0;0,1;1,0;1,1];
     S = zeros(4,1);
@@ -267,69 +270,49 @@ elseif M_ary == 4
     S = sqrt(Es) .* S;
 end
 
-% Render ambiguity table
+% Cross-ambiguity table, built once and cached on disk (notes S17).
 [Ambig_Table.vals,Ambig_Table.t_range,Ambig_Table.f_range] = gen_DD_cross_ambig_table(N,M,T,Fc,vel,shape,alpha,Q,res);
 
-% The last L delay bins are the zero-padding guard, exactly as in
-% sim_fun_ODDM_SIC_MMSE.m (ZP-OTFS convention). In CWS's native
-% delay-major ordering these are the last L contiguous N-wide blocks.
-% equalizer_ptmmse.m takes this as a per-delay-block logical mask and
-% never re-estimates or hard-slices those blocks, while still using their
-% (known, zero) contribution when detecting neighbouring data blocks.
-zero_syms = N*L;
-change_map_vert = false(M*N,1);
-change_map_vert((M-L)*N+1:end) = true;
-known_mask = false(M,1);
-known_mask((M-L+1):M) = true;
-known_x = zeros(M*N,1);      % guard symbols are identically zero
+% Optional zero-padding guard, default off since 2026-10-07 (notes S10).
+if isfield(parameters,'zero_pad'), use_zero_pad = logical(parameters.zero_pad); else, use_zero_pad = false; end
 
-% ---- Optional hand-coded LDPC layer on the PERFECT-CSI path (added
-% 2026-09-29, user direction: debug/improve the LDPC implementation
-% against a known-clean channel, decoupled from DD-RELAX-SI-DA's
-% estimation/SIC complexity). Gated by parameters.ldpc (absent/false ->
-% this whole block is inert and EVERY existing perfect-CSI profile's hash
-% and accumulated data are completely unaffected, same convention as the
-% csi_settings.method gate above). Same hand-coded, no-toolbox code
-% (Comm Functions/Coding Functions/ldpc_construct.m et al.) and the same
-% real per-bit LLR (qpsk_soft_symbols.m, derived for
-% sim_fun_ODDM_DDRELAXSIDA_PTMMSE.m's 2026-09-29 SIC/LDPC audit) as that
-% file -- reused here verbatim rather than re-derived, so a fix to the
-% LLR/LDPC machinery benefits both call sites identically.
-use_ldpc = isfield(parameters,'ldpc') && logical(parameters.ldpc);
+% Interleaver flag, guard mask and the guard's known (zero) symbols (notes S11).
+use_ldpc_ilv = ls.interleave;
+change_map_vert = false(M*N,1);
+known_mask = false(M,1);
+known_x = zeros(M*N,1);
+
+% With the guard, the last L delay bins carry no data.
+if use_zero_pad
+    zero_syms = N*L;
+    change_map_vert((M-L)*N+1:end) = true;
+    known_mask((M-L+1):M) = true;
+else
+    zero_syms = 0;
+end
+
+%% ===== 3. LDPC LAYER =================================================
+% Optional coding layer on the perfect-CSI path, enabled by
+% ldpc_settings: builds (or reuses) the code, checks that whole codewords
+% fill the frame's data bits, and draws the interleaver (notes S12).
+
+% Code length, construction method and the cache keyed by everything that defines the code.
+use_ldpc = ls.enable;
 if use_ldpc
-    % Code size configurable via parameters.ldpc_N (default 416, unchanged
-    % from the first perfect-CSI+LDPC cut) so different block lengths can
-    % be A/B compared without duplicating this file. Must divide this
-    % path's data-bit count (1664 at the project's usual M=64/N=16/Q=4)
-    % evenly -- 416 (4 codewords/frame) and 832 (2 codewords/frame, added
-    % 2026-09-29 to test whether a longer/closer-to-capacity code sharpens
-    % the waterfall) both do; DD-RELAX-SI-DA's own N=512 does not.
-    % rate 1/2, colWeight 6 unchanged across sizes for a fair comparison.
-    if isfield(parameters,'ldpc_N')
-        ldpc_N = parameters.ldpc_N;
-    else
-        ldpc_N = 416;
-    end
-    % Construction method, configurable via parameters.ldpc_method (default
-    % 'random', unchanged from before -- 'peg' added 2026-09-29 after the
-    % N=416-vs-832 A/B pointed at construction quality, not length, as the
-    % binding constraint; see ldpc_construct.m's own header). Cached by
-    % "N_method" key so different (size,method) combinations tested in the
-    % same session don't evict each other.
-    if isfield(parameters,'ldpc_method')
-        ldpc_method = parameters.ldpc_method;
-    else
-        ldpc_method = 'random';
-    end
-    persistent LcCachePerfectMap
+    ldpc_N = ls.N;
+    ldpc_method = ls.method;
     if isempty(LcCachePerfectMap)
         LcCachePerfectMap = containers.Map('KeyType','char','ValueType','any');
     end
-    cacheKey = sprintf('%d_%s', ldpc_N, ldpc_method);
+
+    % Build the code once per (N, method, rate, column weight).
+    cacheKey = sprintf('%d_%s_%g_%d', ldpc_N, ldpc_method, ls.rate, ls.colWeight);
     if ~isKey(LcCachePerfectMap, cacheKey)
-        LcCachePerfectMap(cacheKey) = ldpc_construct(ldpc_N, 0.5, 6, 12345, ldpc_method);
+        LcCachePerfectMap(cacheKey) = ldpc_construct(ldpc_N, ls.rate, ls.colWeight, 12345, ldpc_method);
     end
     Lc = LcCachePerfectMap(cacheKey);
+
+    % Whole codewords must fill the data bits exactly.
     nData = syms_per_f - zero_syms;
     numCW = floor(nData*log2(M_ary)/Lc.N);
     if numCW*Lc.N ~= nData*log2(M_ary)
@@ -337,58 +320,100 @@ if use_ldpc
             "LDPC codeword length %d does not divide the frame's %d data bits evenly -- adjust the code size.", ...
             Lc.N, nData*log2(M_ary));
     end
+
+    % Coded-symbol count and the interleaver (identity when off).
     symsPerCW = Lc.N / log2(M_ary);
     nLdpcSyms = numCW*symsPerCW;
+    nCodedBits = numCW * Lc.N;
+    if use_ldpc_ilv
+        [ilvPerm, ~] = ldpc_interleaver(nCodedBits);
+    else
+        ilvPerm = (1:nCodedBits).';
+    end
 end
 
-% Reset error counters for each SNR
+%% ===== 4. FRAME LOOP =================================================
+% For each frame: draw data and channel, add noise, detect with the true
+% channel, count raw errors and, with LDPC, decode and count coded errors.
+% With run_opts.frame_seed every draw comes from the frame's own substream
+% of four streams (notes S13).
+
+% Per-frame error counters and receiver timings.
 bit_errors = zeros(new_frames,1);
 sym_errors = zeros(new_frames,1);
 frm_errors = zeros(new_frames,1);
 iters_vec = zeros(new_frames,1);
 t_RXiter_vec = zeros(new_frames,1);
 t_RXfull_vec = zeros(new_frames,1);
-t_RXcpufull_vec = zeros(new_frames,1);   % receiver CPU time per frame (s)
-t_RXcpuiter_vec = zeros(new_frames,1);   % per receiver iteration, DERIVED (s)
+t_RXcpufull_vec = zeros(new_frames,1);
+t_RXcpuiter_vec = zeros(new_frames,1);
+
+% Coded counters: info bits, decoder convergence, frames and codewords in error.
 if use_ldpc
     info_bit_errors = zeros(new_frames,1);
     ldpc_converged   = zeros(new_frames,1);
-    info_frm_errors  = zeros(new_frames,1);   % any info-bit error in the frame
-    cw_errors        = zeros(new_frames,1);   % codewords decoded wrong
+    info_frm_errors  = zeros(new_frames,1);
+    cw_errors        = zeros(new_frames,1);
 end
 
-for frame = 1:new_frames
+% Frame streams: channel, info bits, symbols, noise; fingerprints only with them (notes S13).
+[sC, sB, sD, sN] = deal([]);
+if isfield(run_opts,'frame_seed') && ~isempty(run_opts.frame_seed)
+    fs = run_opts.frame_seed;
+    assert(isfield(fs,'seed_base') && isfield(fs,'k_start') && fs.k_start >= 1 && fs.k_start == fix(fs.k_start), ...
+        'sim_fun_ODDM_PTMMSE:badFrameSeed', 'run_opts.frame_seed needs seed_base and an integer k_start >= 1.');
+    [sC, sB, sD, sN] = RandStream.create('mrg32k3a', 'NumStreams', 4, 'Seed', double(fs.seed_base));
+end
+[chan_fp, data_fp, noise_fp] = deal(zeros(new_frames,1));
 
-    % Generate data (native delay-major), force the guard bins to zero
-    [TX_bit,TX_sym,xDD] = gen_data(bit_order,S,syms_per_f);
+% One frame per iteration.
+for frame = 1:new_frames
+    % Move each stream to this frame's substream.
+    if ~isempty(sC)
+        k = run_opts.frame_seed.k_start + frame - 1;
+        sC.Substream = k; sB.Substream = k; sD.Substream = k; sN.Substream = k;
+    end
+
+    % Data in native delay-major order, guard bins forced to zero.
+    [TX_bit,TX_sym,xDD] = gen_data(bit_order,S,syms_per_f,sD);
     TX_bit(change_map_vert,:) = -1;
     TX_sym(change_map_vert) = -1;
     xDD(change_map_vert) = 0;
 
-    % Overwrite the first nLdpcSyms DATA symbols (the change_map_vert
-    % guard sits at the END of the delay-major layout, so indices
-    % 1:nLdpcSyms are always inside the data region) with LDPC-coded bits.
+    % LDPC: the first nLdpcSyms data symbols carry the interleaved codewords (the guard is at the end).
     if use_ldpc
-        u_info = randi([0 1], Lc.K, numCW);
-        coded  = ldpc_encode_manual(Lc, u_info);                  % Lc.N x numCW
-        codedBits = reshape(coded, log2(M_ary), nLdpcSyms).';     % nLdpcSyms x log2(M_ary)
+        u_info = draw(@randi, sB, [0 1], Lc.K, numCW);
+        coded  = ldpc_encode_manual(Lc, u_info);
+        cvec = coded(:);
+        codedBits = reshape(cvec(ilvPerm), log2(M_ary), nLdpcSyms).';
         TX_sym(1:nLdpcSyms) = bits2idx0(codedBits, bit_order);
         TX_bit(1:nLdpcSyms,:) = bit_order(TX_sym(1:nLdpcSyms)+1,:);
         xDD(1:nLdpcSyms) = S(TX_sym(1:nLdpcSyms)+1);
     end
 
-    % Generate the ODDM DD-domain channel (native delay-major). Unlike
-    % the SIC-MMSE path there is no reindexing and no Kronecker transform
-    % here -- equalizer_ptmmse.m consumes this layout directly.
+    % DD channel in native delay-major order; with frame streams the taps come from the channel stream (notes S2, S13).
     t_offset = max_timing_offset * Ts;
-    HDD = gen_HDD_direct(T,N,M,Fc,vel,Q,Ambig_Table,t_offset,false);
+    if isempty(sC)
+        HDD = gen_HDD_direct(T,N,M,Fc,vel,Q,Ambig_Table,t_offset,false);
+    else
+        [Phi_i,tau_i,v_i,gain_fp,u_dop] = channel_generation(Fc,vel,sC);
+        HDD = gen_HDD_direct(T,N,M,Fc,vel,Q,Ambig_Table,t_offset,false,{Phi_i,tau_i,v_i});
+    end
 
-    % Noise and received signal, both in the DD domain
-    w = sqrt(N0/2) * (randn(syms_per_f,1) + 1j*randn(syms_per_f,1));
+    % Noise and received signal, both in the DD domain (notes S3).
+    wr = draw(@randn, sN, syms_per_f, 1);
+    wi = draw(@randn, sN, syms_per_f, 1);
+    w = sqrt(N0/2) * (wr + 1j*wi);
     yDD = HDD*xDD + w;
 
-    % Equalize (paper Sec. V / Algorithm 2). Perfect CSI: the TRUE HDD is
-    % handed to the detector.
+    % Fingerprints: unit channel draws, first 64 info bits or symbols, unit noise draws (notes S13).
+    if ~isempty(sC)
+        chan_fp(frame) = gain_fp + cos(2*pi*u_dop(1));
+        if use_ldpc, data_fp(frame) = sum(u_info(1:64)); else, data_fp(frame) = sum(TX_sym(1:64)); end
+        noise_fp(frame) = sum(wr) + sum(wi);
+    end
+
+    % PT-MMSE detection (paper Sec. V, Algorithm 2) with the TRUE channel, timed in CPU seconds.
     cpu_rx0 = cputime;
     [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame),x_soft,sigma_post2] = ...
         equalizer_ptmmse(yDD,HDD,N,M,L1,L2,Es,N0,S,sic_iters,known_mask,known_x);
@@ -397,15 +422,13 @@ for frame = 1:new_frames
         t_RXcpuiter_vec(frame) = t_RXcpufull_vec(frame) / iters_vec(frame);
     end
 
-    % Hard detection for final x_hat (idempotent -- equalizer_ptmmse.m
-    % already returns hard decisions on the data blocks -- but kept so the
-    % error-counting path is identical to sim_fun_ODDM_SIC_MMSE.m's)
+    % Nearest-symbol decisions, as in sim_fun_ODDM_SIC_MMSE.m (idempotent on PT-MMSE's hard output).
     dist = abs(x_hat.' - S).^2;
     [~,min_index] = min(dist);
     RX_sym = min_index.' - 1;
     RX_bit = bit_order(RX_sym+1,:);
 
-    % Error calculation - excludes the zero-padded guard bins
+    % Raw errors over the data bins only, guard excluded.
     bit_error_vec = TX_bit(~change_map_vert,:) ~= RX_bit(~change_map_vert,:);
     sym_error_vec = TX_sym(~change_map_vert) ~= RX_sym(~change_map_vert);
     bit_errors(frame) = sum(bit_error_vec(:));
@@ -414,10 +437,15 @@ for frame = 1:new_frames
         frm_errors(frame) = 1;
     end
 
+    % LDPC: per-bit LLRs, de-interleave and decode (30 BP iterations).
     if use_ldpc
-        [llrBits, ~] = qpsk_soft_symbols(x_soft(1:nLdpcSyms), sigma_post2(1:nLdpcSyms), Es);  % nLdpcSyms x 2
-        llr = reshape(llrBits.', Lc.N, numCW);                    % Lc.N x numCW
+        [llrBits, ~] = qpsk_soft_symbols(x_soft(1:nLdpcSyms), sigma_post2(1:nLdpcSyms), Es);
+        lvec = reshape(llrBits.', [], 1);
+        lnat = zeros(size(lvec)); lnat(ilvPerm) = lvec;
+        llr = reshape(lnat, Lc.N, numCW);
         [uhat, ~, ok] = ldpc_decode_manual(Lc, llr, 30);
+
+        % Count info-bit, codeword and frame errors, and decoder convergence.
         info_bit_errors(frame) = sum(uhat(:) ~= u_info(:));
         cw_errors(frame)       = sum(any(uhat ~= u_info, 1));
         info_frm_errors(frame) = double(info_bit_errors(frame) > 0);
@@ -426,22 +454,22 @@ for frame = 1:new_frames
 
 end
 
-% Get parameters for throughput
+%% ===== 5. METRICS ====================================================
+% Batch averages for sim_lookup and per-frame values for logging. Raw
+% rates count data bins only; coded throughput is reported alongside the
+% uncoded Thr rather than replacing it (notes S14, S15).
+
+% Frame time-bandwidth product for the throughput metrics.
 frame_duration = N * T;
 bandwidth_hz = M / T;
 
-% Calculate BER, SER and FER - denominators reflect only the real
-% (non-zero-padded) data symbols per frame
+% Raw BER, SER, FER and uncoded throughput over the data bins.
 metrics.BER = sum(bit_errors,"all") / (new_frames*(syms_per_f-zero_syms)*log2(M_ary));
 metrics.SER = sum(sym_errors,"all") / (new_frames*(syms_per_f-zero_syms));
 metrics.FER = sum(frm_errors,"all") / (new_frames);
 metrics.Thr = (log2(M_ary) * (syms_per_f-zero_syms) * (1 - metrics.FER)) / (frame_duration * bandwidth_hz);
-% Channel-estimation runtime is a DEFINED ZERO on the perfect-CSI path
-% (2026-09-19, user direction): no estimator runs, so its cost is exactly
-% nothing -- not missing, not unknown. Emitting 0 rather than omitting the
-% field means a figure comparing estimated-CSI against perfect-CSI shows a
-% real baseline at zero instead of a gap, and the renderer never has to
-% guess whether an absent field means 'free' or 'not measured'.
+
+% Timings; estimation time is a defined zero, since no estimator runs (notes S15).
 metrics.t_ESTcpufull = 0;
 metrics.t_ESTcpuiter = 0;
 metrics.t_RXcpufull  = mean(t_RXcpufull_vec);
@@ -449,34 +477,30 @@ metrics.t_RXcpuiter  = mean(t_RXcpuiter_vec);
 metrics.RX_iters = mean(iters_vec);
 metrics.t_RXiter = mean(t_RXiter_vec);
 metrics.t_RXfull = mean(t_RXfull_vec);
+
+% Coded metrics: info-bit BER and decoder convergence.
 if use_ldpc
     metrics.BER_info = sum(info_bit_errors,"all") / (new_frames * numCW * Lc.K);
     metrics.LDPC_conv = mean(ldpc_converged);
 
-    % CODED-THROUGHPUT metrics (added 2026-10-05). The uncoded Thr above
-    % is identically 0 for any scheme whose raw BER exceeds roughly 1e-4
-    % at this frame size, because FER saturates at 1 -- so it cannot
-    % express a coded result at all. These are ADDED rather than Thr
-    % being redefined, which would silently change the meaning of every
-    % row already stored in sim_lookup.
+    % Coded FER and CWER, then frame-level and per-codeword goodput (notes S14).
     info_bits_per_frame = numCW * Lc.K;
     metrics.FER_info  = sum(info_frm_errors,"all") / new_frames;
     metrics.CWER      = sum(cw_errors,"all") / (new_frames * numCW);
-    % Frame-level goodput: every codeword in the frame must be correct.
     metrics.Thr_coded = (info_bits_per_frame * (1 - metrics.FER_info)) / (frame_duration * bandwidth_hz);
-    % Per-codeword goodput: credit each correct codeword. Less pessimistic
-    % and the more standard figure when a frame carries several
-    % independently-decodable codewords.
     metrics.Thr_coded_cw = (info_bits_per_frame * (1 - metrics.CWER)) / (frame_duration * bandwidth_hz);
 
 end
 
-% Per-frame data for logging / stability check
+% Per-frame errors and, with frame streams, fingerprints, for metrics_aux and frame logs.
 frame_data.bit_errors = bit_errors;
 frame_data.sym_errors = sym_errors;
 frame_data.frm_errors = frm_errors;
+if ~isempty(sC), [frame_data.chan_fp, frame_data.data_fp, frame_data.noise_fp] = deal(chan_fp, data_fp, noise_fp); end
+
+% Per-frame timings and data sizes.
 frame_data.t_RXfull = t_RXfull_vec;
-frame_data.t_ESTcpufull = zeros(new_frames,1);   % perfect CSI: no estimator runs
+frame_data.t_ESTcpufull = zeros(new_frames,1);
 frame_data.t_RXcpufull  = t_RXcpufull_vec;
 frame_data.bits_per_frame = (syms_per_f-zero_syms) * log2(M_ary);
 frame_data.syms_per_frame = syms_per_f-zero_syms;
@@ -487,11 +511,21 @@ end
 end
 
 function idx0 = bits2idx0(bitsMat, bit_order)
-%BITS2IDX0  Map rows of bit pairs to this file's 0-based symbol index
-%   (matching gen_data.m's convention: TX_sym is 0-based, bit_order(idx+1,:)).
+%BITS2IDX0  Map rows of bits to this file's 0-based symbol index
+%   (gen_data.m's convention: TX_sym is 0-based, bit_order(idx+1,:)).
 idx0 = zeros(size(bitsMat,1), 1);
 for r = 1:size(bit_order,1)
     match = all(bitsMat == bit_order(r,:), 2);
     idx0(match) = r-1;
+end
+end
+
+function x = draw(fn, s, varargin)
+%DRAW  One random draw from RandStream s, or from the global stream when s
+%   is empty (notes S13).
+if isempty(s)
+    x = fn(varargin{:});
+else
+    x = fn(s, varargin{:});
 end
 end
