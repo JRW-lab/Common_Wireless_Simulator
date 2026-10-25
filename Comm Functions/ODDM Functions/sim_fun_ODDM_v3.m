@@ -12,6 +12,17 @@ if 2*Q + floor(2510*10^(-9) / Ts) >= M %#ok<NODEF>
     error("Settings can not satisfy the ambiguity assumption.")
 end
 
+% Optional LDPC layer over the M*N*log2(M_ary) data bits; MMSE only (LDPC_MMSE notes S1, S4).
+C = ldpc_frame_setup(parameters, M*N*log2(M_ary), 512);
+if C.enable && receiver_name ~= "MMSE"
+    error("sim_fun_ODDM_v3:ldpcReceiver", 'ldpc_settings is supported with receiver_name "MMSE" only, not "%s".', receiver_name);
+end
+
+% Coded: Eb/N0 is per information bit, Eb = Es/(log2(M_ary)*R) (LDPC_MMSE notes S5).
+if C.enable
+    EbN0 = EbN0 + 10*log10(C.R_eff);
+end
+
 % Define parameters
 res = 10;
 Es = 1;
@@ -71,10 +82,24 @@ iters_vec = zeros(new_frames,1);
 t_RXiter_vec = zeros(new_frames,1);
 t_RXfull_vec = zeros(new_frames,1);
 
+% Coded counters; bit_order counts in binary, so a label row's value is its 0-based symbol index.
+if C.enable
+    [info_err, cw_err, ldpc_conv] = deal(zeros(new_frames,1));
+    kb = log2(M_ary);
+end
+
 for frame = 1:new_frames
 
     % Generate data
     [TX_bit,TX_sym,xDD] = gen_data(bit_order,S,syms_per_f);
+
+    % Coded: every symbol carries the frame's coded bits instead.
+    if C.enable
+        [cbits, u_info] = ldpc_frame_encode(C);
+        TX_bit = reshape(cbits, kb, []).';
+        TX_sym = TX_bit * (2.^(kb-1:-1:0)).';
+        xDD = S(TX_sym+1);
+    end
 
     % Generate H matrix and channel information
     % t_offset = 2 * max_timing_offset * Ts * (rand - 0.5);
@@ -101,7 +126,13 @@ for frame = 1:new_frames
         case "CMC-MMSE"
             [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_CMC_MMSE_AWGN(yDD,HDD,N,M+M_cp,L2+M_cp,-L1-M_cp,Es,N0,S,N_iters);
         case "MMSE"
-            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(yDD,HDD,Es,N0);
+            if C.enable
+                % Coded: the same estimate plus its soft output (LDPC_MMSE notes S2).
+                [x_hat,z_soft,nu_soft,t_RXfull_vec(frame)] = equalizer_MMSE_soft(yDD,HDD,Es,N0);
+                [iters_vec(frame),t_RXiter_vec(frame)] = deal(1,t_RXfull_vec(frame));
+            else
+                [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(yDD,HDD,Es,N0);
+            end
         case "MP"
             [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MP(yDD,HDD,M_ary,M,N,S,N0);
         otherwise
@@ -130,6 +161,12 @@ for frame = 1:new_frames
         frm_errors(frame) = 1;
     end
 
+    % Coded: bit LLRs of the frame's own symbols (CP copies dropped), decode, count (LDPC_MMSE notes S3).
+    if C.enable
+        llr = symbol_llr(z_soft((end-M*N+1):end), nu_soft((end-M*N+1):end), S, bit_order);
+        [info_err(frame), cw_err(frame), ldpc_conv(frame)] = ldpc_frame_decode(C, llr, u_info);
+    end
+
 end
 
 % Get parameters for throughput
@@ -145,6 +182,11 @@ metrics.RX_iters = mean(iters_vec);
 metrics.t_RXiter = mean(t_RXiter_vec);
 metrics.t_RXfull = mean(t_RXfull_vec);
 
+% Coded metrics, defined as on the ODDM PT-MMSE path.
+if C.enable
+    metrics = ldpc_frame_metrics(metrics, C, info_err, cw_err, ldpc_conv, frame_duration, bandwidth_hz);
+end
+
 % Per-frame data for logging / stability check
 frame_data.bit_errors = sum(bit_errors, 2);
 frame_data.sym_errors = sum(sym_errors, 2);
@@ -152,3 +194,6 @@ frame_data.frm_errors = frm_errors;
 frame_data.t_RXfull = t_RXfull_vec;
 frame_data.bits_per_frame = syms_per_f * log2(M_ary);
 frame_data.syms_per_frame = syms_per_f;
+if C.enable
+    frame_data.info_bit_errors = info_err;
+end

@@ -23,6 +23,22 @@ else
     M_cp = 0;
 end
 
+% Optional LDPC layer over the (M-M_cp)*N*log2(M_ary) data bits; MMSE only (LDPC_MMSE notes S1, S4).
+C = ldpc_frame_setup(parameters, (M-M_cp)*N*log2(M_ary), 512);
+if C.enable && receiver_name ~= "MMSE"
+    error("sim_fun_OTFS:ldpcReceiver", 'ldpc_settings is supported with receiver_name "MMSE" only, not "%s".', receiver_name);
+end
+
+% The CP bit positions below assume two bits per symbol.
+if C.enable && CP && M_ary ~= 4
+    error("sim_fun_OTFS:ldpcCP", 'ldpc_settings with CP needs M_ary 4 (QPSK).');
+end
+
+% Coded: Eb/N0 is per information bit, Eb = Es/(log2(M_ary)*R) (LDPC_MMSE notes S5).
+if C.enable
+    EbN0 = EbN0 + 10*log10(C.R_eff);
+end
+
 % Input conversion
 obj = comms_obj_OTFS;
 obj.Eb_N0_db = EbN0;
@@ -121,10 +137,26 @@ sym_errors = zeros(new_frames,1);
 frm_errors = zeros(new_frames,1);
 t_RXiter_vec = zeros(new_frames,1);
 t_RXfull_vec = zeros(new_frames,1);
+
+% Coded: counters, the data (non-CP) symbol and bit positions, and modulator_OTFS's labelled points.
+if C.enable
+    [info_err, cw_err, ldpc_conv] = deal(zeros(new_frames,1));
+    keep_data = setdiff(1:syms_per_f, CP_remove_data);
+    keep_bin = setdiff(1:N_bit_per_slot, CP_remove_bin);
+    labels = dec2base(0:(M_ary-1), 2, log2(M_ary)) - '0';
+    Sc = modulator_OTFS(reshape(labels.', 1, []), M_ary).';
+end
+
 for frame = 1:new_frames
 
     % Generate data, channel and noise
     bin_TX = (rand(1, N_bit_per_slot) > 0.5);
+
+    % Coded: the data positions carry the frame's coded bits instead.
+    if C.enable
+        [cbits, u_info] = ldpc_frame_encode(C);
+        bin_TX(keep_bin) = cbits.' > 0;
+    end
     X_DD = modulator_OTFS(bin_TX, M_ary);
     bin_TX = double(bin_TX).';
     X_DD = X_DD.';
@@ -205,7 +237,12 @@ for frame = 1:new_frames
             % end
             % t_RXfull_vec(frame) = toc(tStartRX);
         case "MMSE"
-            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(Y_DD,H_DD,1,N0);
+            if C.enable
+                % Coded: the same estimate plus its soft output (LDPC_MMSE notes S2).
+                [x_hat,z_soft,nu_soft] = equalizer_MMSE_soft(Y_DD,H_DD,1,N0);
+            else
+                [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(Y_DD,H_DD,1,N0);
+            end
             bin_RX = demodulator_OTFS(x_hat,M_ary).';
             x_hat = modulator_OTFS(bin_RX,M_ary);
             x_hat = x_hat.';
@@ -249,6 +286,12 @@ for frame = 1:new_frames
     t_RXiter_vec(frame) = toc(tStartRX);
     t_RXfull_vec(frame) = t_RXiter_vec(frame);
 
+    % Coded: bit LLRs of the data symbols, decode, count (LDPC_MMSE notes S3).
+    if C.enable
+        llr = symbol_llr(z_soft(keep_data), nu_soft(keep_data), Sc, labels);
+        [info_err(frame), cw_err(frame), ldpc_conv(frame)] = ldpc_frame_decode(C, llr, u_info);
+    end
+
 end
 
 % Get parameters for throughput
@@ -269,6 +312,11 @@ metrics.RX_iters = mean(iters_vec);
 metrics.t_RXiter = mean(t_RXiter_vec);
 metrics.t_RXfull = mean(t_RXfull_vec);
 
+% Coded metrics, defined as on the ODDM PT-MMSE path.
+if C.enable
+    metrics = ldpc_frame_metrics(metrics, C, info_err, cw_err, ldpc_conv, frame_duration, bandwidth_hz);
+end
+
 % Per-frame data for logging / stability check
 frame_data.bit_errors = bit_errors;
 frame_data.sym_errors = sym_errors;
@@ -276,3 +324,6 @@ frame_data.frm_errors = frm_errors;
 frame_data.t_RXfull = t_RXfull_vec;
 frame_data.bits_per_frame = syms_per_f * log2(M_ary);
 frame_data.syms_per_frame = syms_per_f;
+if C.enable
+    frame_data.info_bit_errors = info_err;
+end

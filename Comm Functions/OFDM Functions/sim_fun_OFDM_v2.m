@@ -6,6 +6,17 @@ for i = 1:numel(fields)
     eval([fields{i} ' = parameters.(fields{i});']);
 end
 
+% Optional LDPC layer over the M*log2(M_ary) bits of one symbol; MMSE only (LDPC_MMSE notes S1, S4).
+C = ldpc_frame_setup(parameters, M*log2(M_ary), M*log2(M_ary));
+if C.enable && receiver_name ~= "MMSE"
+    error("sim_fun_OFDM_v2:ldpcReceiver", 'ldpc_settings is supported with receiver_name "MMSE" only, not "%s".', receiver_name);
+end
+
+% Coded: Eb/N0 is per information bit, Eb = Es/(log2(M_ary)*R) (LDPC_MMSE notes S5).
+if C.enable
+    EbN0 = EbN0 + 10*log10(C.R_eff);
+end
+
 % Input conversion
 obj = comms_obj;
 obj.Eb_N0_db = EbN0;
@@ -63,6 +74,13 @@ iters_vec = zeros(new_frames,1);
 t_RXiter_vec = zeros(new_frames,1);
 t_RXfull_vec = zeros(new_frames,1);
 
+% Coded counters and the bit labels of S (index i carries dec2bin(i-1), as counted below).
+if C.enable
+    [info_err, cw_err, ldpc_conv] = deal(zeros(new_frames,1));
+    kb = log2(M_ary);
+    labels = dec2bin(0:M_ary-1, kb) - '0';
+end
+
 % Initialize vectors
 for frame = 1:new_frames
 
@@ -70,6 +88,13 @@ for frame = 1:new_frames
     [TX_data,s] = generate_data(S,N);
     if ~CP
         [~,s_pre] = generate_data(S,N);
+    end
+
+    % Coded: the symbol carries the frame's coded bits instead.
+    if C.enable
+        [cbits, u_info] = ldpc_frame_encode(C);
+        TX_data = reshape(cbits, kb, []).' * (2.^(kb-1:-1:0)).' + 1;
+        s = S(TX_data);
     end
 
     % Channel
@@ -145,7 +170,13 @@ for frame = 1:new_frames
 
         case "MMSE"
             y_F = G_F * s + z_F;
-            [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(y_F,G_F,1,N0);
+            if C.enable
+                % Coded: the same estimate plus its soft output (LDPC_MMSE notes S2).
+                [x_hat,z_soft,nu_soft,t_RXfull_vec(frame)] = equalizer_MMSE_soft(y_F,G_F,1,N0);
+                [iters_vec(frame),t_RXiter_vec(frame)] = deal(1,t_RXfull_vec(frame));
+            else
+                [x_hat,iters_vec(frame),t_RXiter_vec(frame),t_RXfull_vec(frame)] = equalizer_MMSE(y_F,G_F,1,N0);
+            end
             RX_data = demodulator(x_hat,S);
         case "DD-BDFE"
             % Start runtime
@@ -212,7 +243,13 @@ for frame = 1:new_frames
     if sum(sym_errors(frame)) > 0
         frm_errors(frame) = 1;
     end
-    
+
+    % Coded: bit LLRs from the soft output, decode, count (LDPC_MMSE notes S3).
+    if C.enable
+        llr = symbol_llr(z_soft, nu_soft, S, labels);
+        [info_err(frame), cw_err(frame), ldpc_conv(frame)] = ldpc_frame_decode(C, llr, u_info);
+    end
+
 end
 
 % Get parameters for throughput
@@ -228,6 +265,11 @@ metrics.RX_iters = mean(iters_vec);
 metrics.t_RXiter = mean(t_RXiter_vec);
 metrics.t_RXfull = mean(t_RXfull_vec);
 
+% Coded metrics, defined as on the ODDM PT-MMSE path.
+if C.enable
+    metrics = ldpc_frame_metrics(metrics, C, info_err, cw_err, ldpc_conv, frame_duration, bandwidth_hz);
+end
+
 % Per-frame data for logging / stability check
 frame_data.bit_errors = bit_errors;
 frame_data.sym_errors = sym_errors;
@@ -235,6 +277,9 @@ frame_data.frm_errors = frm_errors;
 frame_data.t_RXfull = t_RXfull_vec;
 frame_data.bits_per_frame = syms_per_f * log2(M_ary);
 frame_data.syms_per_frame = syms_per_f;
+if C.enable
+    frame_data.info_bit_errors = info_err;
+end
 
 end
 

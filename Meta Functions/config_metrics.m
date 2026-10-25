@@ -10,7 +10,9 @@ function names = config_metrics(parameters)
 %     every sim function      BER, SER, FER, Thr, RX_iters
 %     LDPC on, ODDM PT-MMSE   BER_info, FER_info, CWER, Thr_coded,
 %       (perfect CSI or a     Thr_coded_cw, LDPC_conv
-%       DD-RELAX method)
+%       DD-RELAX method), or
+%       OFDM / OTFS / ODDM
+%       with receiver MMSE
 %     channel estimation      recon_mse (ODDM PT-MMSE with a
 %                             csi_settings.method, or OTFS-DD MUSIC)
 %     metric_stage not none   recon_mse_r1
@@ -40,9 +42,10 @@ method = "none";
 cs = field_or(parameters, 'csi_settings', struct());
 if isstruct(cs) && isfield(cs, 'method'), method = string(cs.method); end
 
-% Coded metrics: only the PT-MMSE perfect-CSI and DD-RELAX paths decode LDPC
+% Coded metrics: the PT-MMSE perfect-CSI and DD-RELAX paths, and the MMSE paths of OFDM, OTFS and ODDM
 coded_paths = ["none" "DD-RELAX" "DD-RELAX-L" "SP-LDPC"];
-if pt && any(method == coded_paths) && ldpc_on(parameters)
+mmse = any(sys == ["OFDM" "OTFS" "ODDM"]) && rx == "MMSE";
+if ((pt && any(method == coded_paths)) || mmse) && ldpc_on(parameters)
     names = [names "Thr_coded" "Thr_coded_cw" "BER_info" "FER_info" "CWER" "LDPC_conv"];
 end
 

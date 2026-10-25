@@ -8,8 +8,8 @@ figure or table. Results accumulate, so you can stop a run at any time and
 continue it later, or on another computer.
 
 A fresh clone works without any setup. Results are stored as plain files
-next to the code, and an example profile comparing uncoded OFDM, OTFS and
-ODDM is included.
+next to the code, and two example profiles are included: uncoded OFDM, OTFS
+and ODDM, and the same three with LDPC-coded variants.
 
 ## Contents
 
@@ -281,7 +281,7 @@ store the computer knows about.
 | `MMSE` | Linear minimum mean-square error | OFDM, OTFS, ODDM |
 | `CMC-MMSE` | Cross-matrix-cancelling MMSE | OFDM, ODDM |
 | `SIC-MMSE` | Iterative soft interference cancellation MMSE | ODDM (CP-free) |
-| `PT-MMSE` | Partitioned time-domain MMSE, the receiver for channel estimation and LDPC | ODDM (CP-free) |
+| `PT-MMSE` | Partitioned time-domain MMSE, the receiver for channel estimation | ODDM (CP-free) |
 | `MP` | Message passing | ODDM |
 | `DD-BDFE` / `BDFE` | Block decision feedback | OFDM / OTFS |
 | `ML` | Exhaustive search, small grids only | OTFS |
@@ -300,15 +300,22 @@ statistics never appear in the GUI's list in this release.
 
 LDPC coding is implemented in `Comm Functions/Coding Functions/` and needs
 no toolbox. It is enabled per configuration with `ldpc_settings`, for
-example `struct('N', 512, 'rate', 0.5, 'interleave', true)`. It works with
-`PT-MMSE` and offers systematic encoding, normalised min-sum decoding, bit
-interleaving, and shortening/puncturing to a fixed rate.
-The example profile in `saved_profiles.m` shows how to add a coded
-curve, which codeword lengths fit the frame, and every `ldpc_settings`
-field.
+example `struct('N', 128, 'rate', 0.5, 'interleave', true)`. It works with
+the `MMSE` receiver of OFDM, OTFS and ODDM and with ODDM `PT-MMSE`, and
+offers systematic encoding, normalised min-sum decoding, bit interleaving,
+and shortening/puncturing to a fixed rate. On the `MMSE` paths the decoder
+takes exact bit LLRs from the MMSE filter's soft output
+(`equalizer_MMSE_soft.m`, `symbol_llr.m`). The codeword length must divide
+the frame's data bits: `M*N*log2(M_ary)` for ODDM and OTFS, but only
+`M*log2(M_ary)` for OFDM, whose frame is one symbol.
+
+The second example profile, *LDPC-coded vs uncoded OFDM, OTFS and ODDM*,
+adds a coded copy of each of the first example's configurations, so it runs
+as is. The comment block above it in `saved_profiles.m` explains every
+`ldpc_settings` field.
 
 `Eb` is energy per **information** bit, `Eb = Es / (log2(M) * R)`, with the
-rate the code actually realises. `parameters.ebn0_ref = "modbit"` selects
+rate the code actually realises. On `PT-MMSE`, `parameters.ebn0_ref = "modbit"` selects
 energy per modulation bit instead.
 
 ### Complexity references

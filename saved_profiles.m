@@ -70,8 +70,9 @@ function [all_profiles,profile_names] = saved_profiles()
 %     max_timing_offset  timing offset, in units of Ts
 %     csi_settings       (ODDM, receiver "PT-MMSE") channel estimation, not
 %                        in the public release; absent means perfect CSI
-%     ldpc_settings      (ODDM, receiver "PT-MMSE") LDPC coding: N, rate,
-%                        interleave, ...; absent means uncoded
+%     ldpc_settings      LDPC coding (N, rate, interleave, ...) on the
+%                        "MMSE" receiver of OFDM, OTFS and ODDM and on
+%                        ODDM "PT-MMSE"; absent means uncoded
 %
 %   HOW RESULTS ARE STORED -- READ BEFORE EDITING A PROFILE THAT HAS DATA
 %     Every point (one primary value x one config) is stored under a
@@ -143,33 +144,34 @@ p.configs = {
 p.delete_configs = [];
 
 % ADDING LDPC CODING. Coding is turned on per config by an ldpc_settings
-% struct, and it runs on the ODDM PT-MMSE receiver only (receiver_name
-% "PT-MMSE"; the MMSE, OTFS and OFDM paths ignore it). To add a coded ODDM
-% curve to this profile, append a fourth config, for example
+% struct, on all three systems here (the "MMSE" receiver) and on the ODDM
+% "PT-MMSE" receiver. The coded copy of a config is the same struct plus
 %
-%     struct('system_name', "ODDM", 'receiver_name', "PT-MMSE", ...
-%         'ldpc_settings', struct('N', 512, 'rate', 0.5, 'interleave', true))
+%     'ldpc_settings', struct('N', 128, 'rate', 0.5, 'interleave', true)
 %
-% and give it a fourth legend entry, line style and colour ("ODDM, LDPC
-% rate 1/2", "--o", "#D62728"). ldpc_settings fields (resolve_ldpc_settings.m):
-%   N           codeword length in bits. Always set it, and make it divide
-%               the frame's data bits exactly: M*N*log2(M_ary) = 64*16*2 =
-%               2048 here, so 256, 512, 1024 or 2048. Any other length is
-%               refused with an error.
+% and its own legend entry, line style and colour. The next profile does
+% exactly that for all three configs. ldpc_settings fields
+% (resolve_ldpc_settings.m):
+%   N           codeword length in bits. Make it divide the frame's data
+%               bits exactly, or the run stops with an error: an ODDM or
+%               OTFS frame carries M*N*log2(M_ary) = 64*16*2 = 2048 bits
+%               here, an OFDM frame (one symbol) only M*log2(M_ary) = 128.
+%               128 fits all three, so the systems share one code. Default
+%               512 for ODDM and OTFS, one codeword per symbol for OFDM.
 %   rate        requested code rate (default 0.5); the code realises
 %               round(N*(1-rate)) parity bits, e.g. 0.8 at N = 512 is 410/512
 %   interleave  true spreads each codeword across the frame (default false)
 %   bp_iters    belief-propagation iterations (default 30)
 %   colWeight   parity-check column weight (default 6)
 %   method      "random" (default) or "peg" parity-check construction
-% QPSK only (M_ary 4). Eb/N0 is then per INFORMATION bit, Eb = Es/(2*R), so
-% a coded and an uncoded curve are compared at equal energy per delivered
-% bit. The GUI's Statistic list gains BER_info, FER_info, CWER, Thr_coded,
-% Thr_coded_cw and LDPC_conv as soon as one config is coded. A coded
-% PT-MMSE frame takes a few seconds on a 4-core desktop.
-% To sweep the code itself, use the top-level aliases ldpc_rate, ldpc_N,
-% ldpc_bp_iters or ldpc_colweight as primary_var (and leave that field out
-% of the config's ldpc_settings).
+% Eb/N0 is then per INFORMATION bit, Eb = Es/(log2(M_ary)*R), so a coded
+% and an uncoded curve are compared at equal energy per delivered bit. The
+% decoder takes exact bit LLRs from the MMSE filter's soft output. The
+% GUI's Statistic list gains BER_info, FER_info, CWER, Thr_coded,
+% Thr_coded_cw and LDPC_conv as soon as one config is coded; BER stays the
+% raw (coded-bit) error rate. To sweep the code itself, use the top-level
+% aliases ldpc_rate, ldpc_N, ldpc_bp_iters or ldpc_colweight as primary_var
+% (and leave that field out of the config's ldpc_settings).
 
 % Legend entry, line style and colour per config, in config order.
 p.legend_vec = {
@@ -187,6 +189,34 @@ p.line_colors = {...
     "#1F77B4"
     "#2CA02C"
     };
+
+% Register the profile.
+all_profiles = [all_profiles p];
+profile_names = [profile_names profile_name];
+
+%% ===== EXAMPLE PROFILE: LDPC-coded vs uncoded OFDM, OTFS and ODDM (MMSE, perfect CSI) =====
+% The previous example with a coded copy of each config: the same rate-1/2,
+% length-128 LDPC code (interleaved) on all three systems, decoded from the
+% MMSE filter's soft output. Eb/N0 is per information bit, so the dashed
+% coded curves pay the 3 dB rate penalty and win only where the code's gain
+% exceeds it. The uncoded curves are the previous profile's points (same
+% parameters, so the same stored rows). A coded frame took 0.03 s (OFDM)
+% to about 1 s (OTFS) on a 4-core desktop.
+
+% Name and x-axis sweep: the previous example's grid, swept further.
+profile_name = "Example: LDPC-coded vs uncoded OFDM, OTFS and ODDM (MMSE, perfect CSI)";
+p.primary_vals = 0:3:21;
+
+% The three uncoded configs, then each with the code added.
+code = struct('N', 128, 'rate', 0.5, 'interleave', true);
+coded = p.configs;
+for k = 1:numel(coded), coded{k}.ldpc_settings = code; end
+p.configs = [p.configs; coded];
+
+% Uncoded solid, coded dashed, one colour per system.
+p.legend_vec = [p.legend_vec; {"ODDM, LDPC 1/2"; "OTFS, LDPC 1/2"; "OFDM, LDPC 1/2"}];
+p.line_styles = [p.line_styles; {"--o"; "--s"; "--^"}];
+p.line_colors = [p.line_colors; p.line_colors];
 
 % Register the profile.
 all_profiles = [all_profiles p];
